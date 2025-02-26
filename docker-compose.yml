@@ -1,0 +1,11 @@
+version: "3"
+
+services:
+  weather-api:
+    build: .
+    ports:
+      - "8080:8080"
+    environment:
+      - OPENWEATHER_API_KEY=${OPENWEATHER_API_KEY}
+      - PORT=8080
+    restart: unless-stopped
