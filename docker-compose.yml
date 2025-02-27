@@ -1,11 +1,44 @@
 version: "3"
 
 services:
-  weather-api:
-    build: .
+  gust-api:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
     ports:
       - "8080:8080"
+    volumes:
+      - .:/app
+      - ./data:/app/data
     environment:
       - OPENWEATHER_API_KEY=${OPENWEATHER_API_KEY}
-      - PORT=8080
-    restart: unless-stopped
+      - GITHUB_CLIENT_ID=${GITHUB_CLIENT_ID}
+      - GITHUB_CLIENT_SECRET=${GITHUB_CLIENT_SECRET}
+      - JWT_SECRET=${JWT_SECRET:-super-secret-key-for-development-only}
+      - REPO_OWNER=${REPO_OWNER:-josephburgess}
+      - REPO_NAME=${REPO_NAME:-gust}
+      - DB_PATH=./data/gust.db
+    depends_on:
+      - postgres
+    networks:
+      - gust-network
+
+  postgres:
+    image: postgres:13
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=gust
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - gust-network
+
+networks:
+  gust-network:
+    driver: bridge
+
+volumes:
+  postgres-data:
