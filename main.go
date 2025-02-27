@@ -63,9 +63,7 @@ func main() {
 
 	apiRouter := r.PathPrefix("/api").Subrouter()
 	apiRouter.Use(apiKeyMiddleware)
-
 	apiRouter.HandleFunc("/weather/{city}", getWeatherHandler).Methods("GET")
-	apiRouter.HandleFunc("/forecast/{city}", getForecastHandler).Methods("GET")
 	apiRouter.HandleFunc("/user", getUserHandler).Methods("GET")
 
 	port := os.Getenv("PORT")
@@ -125,34 +123,17 @@ func getWeatherHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]any{
-		"city":    city,
-		"weather": weather,
-	})
-}
-
-func getForecastHandler(w http.ResponseWriter, r *http.Request) {
-	vars := mux.Vars(r)
-	cityName := vars["city"]
-
-	city, err := weatherClient.GetCoordinates(cityName)
-	if err != nil {
-		http.Error(w, fmt.Sprintf("Error finding city: %v", err), http.StatusNotFound)
-		return
-	}
-
-	forecast, err := weatherClient.GetForecast(city.Lat, city.Lon)
-	if err != nil {
-		http.Error(w, fmt.Sprintf("Error getting forecast: %v", err), http.StatusInternalServerError)
-		return
+	// Add the city name to the response
+	response := struct {
+		City    *City            `json:"city"`
+		Weather *OneCallResponse `json:"weather"`
+	}{
+		City:    city,
+		Weather: weather,
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]any{
-		"city":     city,
-		"forecast": forecast,
-	})
+	json.NewEncoder(w).Encode(response)
 }
 
 func authRequestHandler(w http.ResponseWriter, r *http.Request) {
