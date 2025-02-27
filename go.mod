@@ -1,4 +1,4 @@
-module github.com/josephburgess/gust-api
+module github.com/josephburgess/breeze
 
 go 1.24
 

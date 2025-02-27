@@ -6,8 +6,8 @@ import (
 	"net/http"
 
 	"github.com/gorilla/mux"
-	"github.com/josephburgess/gust-api/internal/models"
-	"github.com/josephburgess/gust-api/internal/services/weather"
+	"github.com/josephburgess/breeze/internal/models"
+	"github.com/josephburgess/breeze/internal/services/weather"
 )
 
 type WeatherHandler struct {

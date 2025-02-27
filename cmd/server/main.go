@@ -4,11 +4,11 @@ import (
 	"log"
 	"net/http"
 
-	"github.com/josephburgess/gust-api/internal/api"
-	"github.com/josephburgess/gust-api/internal/config"
-	"github.com/josephburgess/gust-api/internal/services/auth"
-	"github.com/josephburgess/gust-api/internal/services/store"
-	"github.com/josephburgess/gust-api/internal/services/weather"
+	"github.com/josephburgess/breeze/internal/api"
+	"github.com/josephburgess/breeze/internal/config"
+	"github.com/josephburgess/breeze/internal/services/auth"
+	"github.com/josephburgess/breeze/internal/services/store"
+	"github.com/josephburgess/breeze/internal/services/weather"
 )
 
 func main() {

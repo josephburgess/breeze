@@ -2,11 +2,11 @@ package api
 
 import (
 	"github.com/gorilla/mux"
-	"github.com/josephburgess/gust-api/internal/api/handlers"
-	"github.com/josephburgess/gust-api/internal/api/middleware"
-	"github.com/josephburgess/gust-api/internal/services/auth"
-	"github.com/josephburgess/gust-api/internal/services/store"
-	"github.com/josephburgess/gust-api/internal/services/weather"
+	"github.com/josephburgess/breeze/internal/api/handlers"
+	"github.com/josephburgess/breeze/internal/api/middleware"
+	"github.com/josephburgess/breeze/internal/services/auth"
+	"github.com/josephburgess/breeze/internal/services/store"
+	"github.com/josephburgess/breeze/internal/services/weather"
 )
 
 func NewRouter(weatherClient *weather.Client, userStore *store.UserStore, githubOAuth *auth.GitHubOAuth) *mux.Router {

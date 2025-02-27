@@ -10,17 +10,17 @@ RUN go mod download
 
 COPY . .
 
-RUN CGO_ENABLED=0 GOOS=linux go build -o gust-api ./cmd/server
+RUN CGO_ENABLED=0 GOOS=linux go build -o breeze ./cmd/server
 
 FROM alpine:3.18
 
 WORKDIR /app
 
-COPY --from=builder /app/gust-api .
+COPY --from=builder /app/breeze .
 
 # Create data directory
 RUN mkdir -p ./data
 
 EXPOSE 8080
 
-CMD ["./gust-api"]
+CMD ["./breeze"]

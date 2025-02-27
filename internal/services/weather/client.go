@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/josephburgess/gust-api/internal/models"
+	"github.com/josephburgess/breeze/internal/models"
 )
 
 type Client struct {

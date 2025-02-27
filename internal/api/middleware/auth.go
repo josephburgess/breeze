@@ -4,7 +4,7 @@ import (
 	"context"
 	"net/http"
 
-	"github.com/josephburgess/gust-api/internal/services/store"
+	"github.com/josephburgess/breeze/internal/services/store"
 )
 
 type contextKey string

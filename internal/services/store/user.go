@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/josephburgess/gust-api/internal/models"
+	"github.com/josephburgess/breeze/internal/models"
 	_ "github.com/mattn/go-sqlite3"
 )
 

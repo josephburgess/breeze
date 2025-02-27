@@ -4,8 +4,8 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"github.com/josephburgess/gust-api/internal/api/middleware"
-	"github.com/josephburgess/gust-api/internal/models"
+	"github.com/josephburgess/breeze/internal/api/middleware"
+	"github.com/josephburgess/breeze/internal/models"
 )
 
 type UserHandler struct{}

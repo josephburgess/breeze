@@ -6,10 +6,10 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/josephburgess/gust-api/internal/models"
-	"github.com/josephburgess/gust-api/internal/services/auth"
-	"github.com/josephburgess/gust-api/internal/services/store"
-	"github.com/josephburgess/gust-api/internal/templates"
+	"github.com/josephburgess/breeze/internal/models"
+	"github.com/josephburgess/breeze/internal/services/auth"
+	"github.com/josephburgess/breeze/internal/services/store"
+	"github.com/josephburgess/breeze/internal/templates"
 )
 
 type AuthHandler struct {

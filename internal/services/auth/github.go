@@ -8,7 +8,7 @@ import (
 	"net/url"
 
 	"github.com/google/uuid"
-	"github.com/josephburgess/gust-api/internal/models"
+	"github.com/josephburgess/breeze/internal/models"
 )
 
 type GitHubOAuth struct {
