@@ -1,19 +1,26 @@
-package main
+package weather
 
 import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+
+	"github.com/josephburgess/gust-api/internal/models"
 )
 
-func NewWeatherClient(apiKey string) *WeatherClient {
-	return &WeatherClient{
+type Client struct {
+	ApiKey  string
+	BaseURL string
+}
+
+func NewClient(apiKey string) *Client {
+	return &Client{
 		ApiKey:  apiKey,
 		BaseURL: "https://api.openweathermap.org/",
 	}
 }
 
-func (c *WeatherClient) GetCoordinates(city string) (*City, error) {
+func (c *Client) GetCoordinates(city string) (*models.City, error) {
 	url := fmt.Sprintf("%sgeo/1.0/direct?q=%s&limit=1&appid=%s", c.BaseURL, city, c.ApiKey)
 
 	resp, err := http.Get(url)
@@ -22,7 +29,7 @@ func (c *WeatherClient) GetCoordinates(city string) (*City, error) {
 	}
 	defer resp.Body.Close()
 
-	var cities []City
+	var cities []models.City
 	if err := json.NewDecoder(resp.Body).Decode(&cities); err != nil {
 		return nil, fmt.Errorf("unmarshaling JSON: %w", err)
 	}
@@ -34,7 +41,7 @@ func (c *WeatherClient) GetCoordinates(city string) (*City, error) {
 	return &cities[0], nil
 }
 
-func (c *WeatherClient) GetWeather(lat, lon float64) (*OneCallResponse, error) {
+func (c *Client) GetWeather(lat, lon float64) (*models.OneCallResponse, error) {
 	url := fmt.Sprintf("%sdata/3.0/onecall?lat=%f&lon=%f&appid=%s", c.BaseURL, lat, lon, c.ApiKey)
 
 	resp, err := http.Get(url)
@@ -47,7 +54,7 @@ func (c *WeatherClient) GetWeather(lat, lon float64) (*OneCallResponse, error) {
 		return nil, fmt.Errorf("API returned status %d", resp.StatusCode)
 	}
 
-	var result OneCallResponse
+	var result models.OneCallResponse
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return nil, fmt.Errorf("unmarshaling JSON: %w", err)
 	}

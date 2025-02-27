@@ -1,26 +1,9 @@
-package main
+package models
 
 type City struct {
 	Name string  `json:"name"`
 	Lat  float64 `json:"lat"`
 	Lon  float64 `json:"lon"`
-}
-
-type WeatherClient struct {
-	ApiKey  string
-	BaseURL string
-}
-
-type OneCallResponse struct {
-	Lat            float64        `json:"lat"`
-	Lon            float64        `json:"lon"`
-	Timezone       string         `json:"timezone"`
-	TimezoneOffset int            `json:"timezone_offset"`
-	Current        CurrentWeather `json:"current"`
-	Minutely       []MinuteData   `json:"minutely"`
-	Hourly         []HourData     `json:"hourly"`
-	Daily          []DayData      `json:"daily"`
-	Alerts         []Alert        `json:"alerts"`
 }
 
 type WeatherCondition struct {
@@ -129,4 +112,21 @@ type Alert struct {
 	End         int64    `json:"end"`
 	Description string   `json:"description"`
 	Tags        []string `json:"tags"`
+}
+
+type OneCallResponse struct {
+	Lat            float64        `json:"lat"`
+	Lon            float64        `json:"lon"`
+	Timezone       string         `json:"timezone"`
+	TimezoneOffset int            `json:"timezone_offset"`
+	Current        CurrentWeather `json:"current"`
+	Minutely       []MinuteData   `json:"minutely"`
+	Hourly         []HourData     `json:"hourly"`
+	Daily          []DayData      `json:"daily"`
+	Alerts         []Alert        `json:"alerts"`
+}
+
+type WeatherResponse struct {
+	City    *City            `json:"city"`
+	Weather *OneCallResponse `json:"weather"`
 }

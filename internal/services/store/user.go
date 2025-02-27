@@ -1,4 +1,4 @@
-package main
+package store
 
 import (
 	"database/sql"
@@ -6,20 +6,12 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/josephburgess/gust-api/internal/models"
 	_ "github.com/mattn/go-sqlite3"
 )
 
 type UserStore struct {
 	db *sql.DB
-}
-
-type ApiCredential struct {
-	ID           string    `json:"id"`
-	GithubUserID int64     `json:"github_user_id"`
-	ApiKey       string    `json:"api_key"`
-	LastUsed     time.Time `json:"last_used"`
-	CreatedAt    time.Time `json:"created_at"`
-	RequestCount int       `json:"request_count"`
 }
 
 func NewUserStore(dbPath string) (*UserStore, error) {
@@ -32,7 +24,16 @@ func NewUserStore(dbPath string) (*UserStore, error) {
 		return nil, fmt.Errorf("failed to open database: %w", err)
 	}
 
-	_, err = db.Exec(`
+	if err := initDB(db); err != nil {
+		db.Close()
+		return nil, err
+	}
+
+	return &UserStore{db: db}, nil
+}
+
+func initDB(db *sql.DB) error {
+	_, err := db.Exec(`
 	CREATE TABLE IF NOT EXISTS users (
 		id INTEGER PRIMARY KEY,
 		github_id INTEGER UNIQUE NOT NULL,
@@ -57,18 +58,17 @@ func NewUserStore(dbPath string) (*UserStore, error) {
 	);
 	`)
 	if err != nil {
-		db.Close()
-		return nil, fmt.Errorf("failed to create tables: %w", err)
+		return fmt.Errorf("failed to create tables: %w", err)
 	}
 
-	return &UserStore{db: db}, nil
+	return nil
 }
 
 func (s *UserStore) Close() error {
 	return s.db.Close()
 }
 
-func (s *UserStore) SaveUser(user *User) error {
+func (s *UserStore) SaveUser(user *models.User) error {
 	_, err := s.db.Exec(`
 	INSERT INTO users (github_id, login, name, email, avatar_url, token, last_login)
 	VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
@@ -93,8 +93,8 @@ func (s *UserStore) SetUserStarredRepo(githubID int64) error {
 	return err
 }
 
-func (s *UserStore) GetUser(githubID int64) (*User, error) {
-	var user User
+func (s *UserStore) GetUser(githubID int64) (*models.User, error) {
+	var user models.User
 
 	err := s.db.QueryRow(`
 	SELECT github_id, login, name, email, avatar_url, token
@@ -109,7 +109,7 @@ func (s *UserStore) GetUser(githubID int64) (*User, error) {
 	return &user, err
 }
 
-func (s *UserStore) CreateAPICredential(githubUserID int64) (*ApiCredential, error) {
+func (s *UserStore) CreateAPICredential(githubUserID int64) (*models.ApiCredential, error) {
 	var exists bool
 	err := s.db.QueryRow("SELECT 1 FROM users WHERE github_id = ?", githubUserID).Scan(&exists)
 	if err == sql.ErrNoRows {
@@ -127,7 +127,7 @@ func (s *UserStore) CreateAPICredential(githubUserID int64) (*ApiCredential, err
 		return nil, fmt.Errorf("failed to create API credential: %w", err)
 	}
 
-	return &ApiCredential{
+	return &models.ApiCredential{
 		ID:           id,
 		GithubUserID: githubUserID,
 		ApiKey:       apiKey,
@@ -135,7 +135,7 @@ func (s *UserStore) CreateAPICredential(githubUserID int64) (*ApiCredential, err
 	}, nil
 }
 
-func (s *UserStore) ValidateAPIKey(apiKey string) (*User, error) {
+func (s *UserStore) ValidateAPIKey(apiKey string) (*models.User, error) {
 	_, err := s.db.Exec(`
 	UPDATE api_credentials
 	SET last_used = CURRENT_TIMESTAMP, request_count = request_count + 1

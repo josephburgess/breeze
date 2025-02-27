@@ -10,15 +10,17 @@ RUN go mod download
 
 COPY . .
 
-RUN CGO_ENABLED=0 GOOS=linux go build -o weather-api .
+RUN CGO_ENABLED=0 GOOS=linux go build -o gust-api ./cmd/server
 
 FROM alpine:3.18
 
 WORKDIR /app
 
-COPY --from=builder /app/weather-api .
-COPY --from=builder /app/.env* .
+COPY --from=builder /app/gust-api .
+
+# Create data directory
+RUN mkdir -p ./data
 
 EXPOSE 8080
 
-CMD ["./weather-api"]
+CMD ["./gust-api"]
