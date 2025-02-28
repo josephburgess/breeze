@@ -2,7 +2,9 @@ version: "3.8"
 
 services:
   breeze:
-    image: ghcr.io/josephburgess/breeze:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
     container_name: breeze
     restart: unless-stopped
     env_file:
