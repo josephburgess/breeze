@@ -10,7 +10,7 @@ RUN go mod download
 
 COPY . .
 
-RUN CGO_ENABLED=0 GOOS=linux go build -o breeze ./cmd/server
+RUN CGO_ENABLED=1 GOOS=linux go build -o breeze ./cmd/server
 
 FROM alpine:3.18
 
