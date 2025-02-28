@@ -1,23 +1,24 @@
-FROM golang:1.24 as builder
+FROM golang:1.24-alpine AS builder
 
 WORKDIR /app
 
+RUN apk add --no-cache git
+
 COPY go.mod go.sum ./
+
 RUN go mod download
 
-# Copy the entire project
 COPY . .
 
 RUN go build -o breeze ./cmd/server
 
-# Use a smaller base image for the final container
-FROM alpine:latest
+FROM alpine:3.18
 
 WORKDIR /app
 
-RUN apk add --no-cache ca-certificates
-
 COPY --from=builder /app/breeze .
+
+RUN mkdir -p ./data
 
 EXPOSE 8080
 
