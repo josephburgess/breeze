@@ -31,6 +31,8 @@ jobs:
           key: ${{ secrets.DO_SSH_KEY }}
           port: 22
           script: |
+            export GHCR_PAT="${{ secrets.GHCR_PAT }}"
+            echo "$GHCR_PAT" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
             cd /var/www/breeze
             docker-compose down || true
             docker-compose pull
