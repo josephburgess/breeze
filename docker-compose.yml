@@ -6,11 +6,9 @@ services:
       context: .
       dockerfile: Dockerfile
     restart: always
+    env_file:
+      - .env
     environment:
-      - OPENWEATHER_API_KEY=${OPENWEATHER_API_KEY}
-      - GITHUB_CLIENT_ID=${GITHUB_CLIENT_ID}
-      - GITHUB_CLIENT_SECRET=${GITHUB_CLIENT_SECRET}
-      - JWT_SECRET=${JWT_SECRET}
       - DB_PATH=/app/data/gust.db
     volumes:
       - ./data:/app/data
