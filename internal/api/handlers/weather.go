@@ -2,10 +2,10 @@ package handlers
 
 import (
 	"encoding/json"
-	"fmt"
 	"net/http"
 
 	"github.com/gorilla/mux"
+	"github.com/josephburgess/breeze/internal/logging"
 	"github.com/josephburgess/breeze/internal/models"
 	"github.com/josephburgess/breeze/internal/services/weather"
 )
@@ -24,17 +24,25 @@ func (h *WeatherHandler) GetWeather(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	cityName := vars["city"]
 
+	logging.Info("Fetching weather for city: %s", cityName)
+
 	city, err := h.weatherClient.GetCoordinates(cityName)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("Error finding city: %v", err), http.StatusNotFound)
+		logging.Error("Error finding city", err)
+		http.Error(w, "Error finding city", http.StatusNotFound)
 		return
 	}
 
+	logging.Info("Found city: %s (Lat: %f, Lon: %f)", city.Name, city.Lat, city.Lon)
+
 	weather, err := h.weatherClient.GetWeather(city.Lat, city.Lon)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("Error getting weather: %v", err), http.StatusInternalServerError)
+		logging.Error("Error getting weather", err)
+		http.Error(w, "Error getting weather", http.StatusInternalServerError)
 		return
 	}
+
+	logging.Info("Retrieved weather for city: %s", city.Name)
 
 	response := models.WeatherResponse{
 		City:    city,
