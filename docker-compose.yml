@@ -1,44 +1,24 @@
 version: "3"
 
 services:
-  breeze:
+  breeze-api:
     build:
       context: .
-      dockerfile: Dockerfile.dev
-    ports:
-      - "8080:8080"
-    volumes:
-      - .:/app
-      - ./data:/app/data
+      dockerfile: Dockerfile
+    restart: always
     environment:
       - OPENWEATHER_API_KEY=${OPENWEATHER_API_KEY}
       - GITHUB_CLIENT_ID=${GITHUB_CLIENT_ID}
       - GITHUB_CLIENT_SECRET=${GITHUB_CLIENT_SECRET}
-      - JWT_SECRET=${JWT_SECRET:-super-secret-key-for-development-only}
-      - REPO_OWNER=${REPO_OWNER:-josephburgess}
-      - REPO_NAME=${REPO_NAME:-gust}
-      - DB_PATH=./data/gust.db
-    depends_on:
-      - postgres
-    networks:
-      - gust-network
-
-  postgres:
-    image: postgres:13
-    ports:
-      - "5432:5432"
-    environment:
-      - POSTGRES_USER=postgres
-      - POSTGRES_PASSWORD=postgres
-      - POSTGRES_DB=gust
+      - JWT_SECRET=${JWT_SECRET}
+      - DB_PATH=/app/data/gust.db
     volumes:
-      - postgres-data:/var/lib/postgresql/data
+      - ./data:/app/data
+    ports:
+      - "8080:8080"
     networks:
-      - gust-network
+      - breeze-network
 
 networks:
-  gust-network:
+  breeze-network:
     driver: bridge
-
-volumes:
-  postgres-data:
