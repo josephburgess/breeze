@@ -1,14 +1,17 @@
-name: Deploy Breeze API
+name: deploy
 
 on:
   push:
-    branches: [main]
+    branches:
+      - main
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
+
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
       - name: Copy files to server
         uses: appleboy/scp-action@v0.1.7
@@ -17,7 +20,7 @@ jobs:
           username: ${{ secrets.DO_USERNAME }}
           key: ${{ secrets.DO_SSH_KEY }}
           port: 22
-          source: "./,!.git/,!tmp/"
+          source: "./,!.git/,!tmp/,!node_modules/"
           target: "/var/www/breeze"
 
       - name: Deploy Docker container
@@ -29,4 +32,6 @@ jobs:
           port: 22
           script: |
             cd /var/www/breeze
-            docker-compose -f docker-compose.yml up -d --build
+            docker-compose down || true
+            docker-compose pull
+            docker-compose up -d --build --remove-orphans

@@ -1,25 +1,23 @@
-FROM golang:1.24-alpine AS builder
+FROM golang:1.20 as builder
 
 WORKDIR /app
-
-RUN apk add --no-cache git gcc musl-dev sqlite-dev
 
 COPY go.mod go.sum ./
-
 RUN go mod download
 
+# Copy the entire project
 COPY . .
 
-RUN CGO_ENABLED=1 GOOS=linux go build -o breeze ./cmd/server
+RUN go build -o breeze ./cmd/server
 
-FROM alpine:3.18
+# Use a smaller base image for the final container
+FROM alpine:latest
 
 WORKDIR /app
 
-COPY --from=builder /app/breeze .
+RUN apk add --no-cache ca-certificates
 
-# Create data directory
-RUN mkdir -p ./data
+COPY --from=builder /app/breeze .
 
 EXPOSE 8080
 
