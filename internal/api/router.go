@@ -12,24 +12,20 @@ import (
 func NewRouter(weatherClient *weather.Client, userStore *store.UserStore, githubOAuth *auth.GitHubOAuth) *mux.Router {
 	router := mux.NewRouter()
 
-	// Create handlers
+	// create handlers
 	authHandler := handlers.NewAuthHandler(githubOAuth, userStore)
 	userHandler := handlers.NewUserHandler()
 	weatherHandler := handlers.NewWeatherHandler(weatherClient)
 
-	// Auth routes (public)
+	// auth routes (public)
 	router.HandleFunc("/api/auth/request", authHandler.RequestAuth).Methods("GET")
 	router.HandleFunc("/api/auth/callback", authHandler.Callback).Methods("GET")
 	router.HandleFunc("/api/auth/exchange", authHandler.ExchangeToken).Methods("POST")
 
-	// Protected API routes
+	// auth'ed routes (needs key)
 	apiRouter := router.PathPrefix("/api").Subrouter()
 	apiRouter.Use(middleware.ApiKeyAuth(userStore))
-
-	// User routes
 	apiRouter.HandleFunc("/user", userHandler.GetUser).Methods("GET")
-
-	// Weather routes
 	apiRouter.HandleFunc("/weather/{city}", weatherHandler.GetWeather).Methods("GET")
 
 	return router

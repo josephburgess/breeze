@@ -1,26 +1,25 @@
 package main
 
 import (
-	"log"
 	"net/http"
 
 	"github.com/josephburgess/breeze/internal/api"
 	"github.com/josephburgess/breeze/internal/config"
+	"github.com/josephburgess/breeze/internal/logging"
 	"github.com/josephburgess/breeze/internal/services/auth"
 	"github.com/josephburgess/breeze/internal/services/store"
 	"github.com/josephburgess/breeze/internal/services/weather"
 )
 
 func main() {
-	// Load configuration
 	cfg := config.Load()
 
-	// Initialize services
 	weatherClient := weather.NewClient(cfg.OpenWeatherAPIKey)
 
 	userStore, err := store.NewUserStore(cfg.DBPath)
 	if err != nil {
-		log.Fatalf("Failed to initialize user store: %v", err)
+		logging.Error("Failed to initialize user store", err)
+		return
 	}
 	defer userStore.Close()
 
@@ -30,10 +29,9 @@ func main() {
 		cfg.GithubRedirectURI,
 	)
 
-	// Create router with all routes configured
 	router := api.NewRouter(weatherClient, userStore, githubOAuth)
+	router.Use(logging.Middleware)
 
-	// Start server
-	log.Printf("Starting server on port %s", cfg.Port)
-	log.Fatal(http.ListenAndServe(":"+cfg.Port, router))
+	logging.Info("Starting server on port %s", cfg.Port)
+	logging.Error("Server encountered an error", http.ListenAndServe(":"+cfg.Port, router))
 }

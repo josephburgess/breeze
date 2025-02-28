@@ -1,10 +1,10 @@
 package config
 
 import (
-	"log"
 	"os"
 
 	"github.com/joho/godotenv"
+	"github.com/josephburgess/breeze/internal/logging"
 )
 
 type Config struct {
@@ -19,7 +19,7 @@ type Config struct {
 
 func Load() *Config {
 	if err := godotenv.Load(); err != nil {
-		log.Println("Warning: .env file not found, using environment variables")
+		logging.Warn(".env file not found")
 	}
 
 	port := getEnv("PORT", "8080")
@@ -31,16 +31,21 @@ func Load() *Config {
 	jwtSecret := getEnv("JWT_SECRET", "")
 
 	if openWeatherAPIKey == "" {
-		log.Fatal("OPENWEATHER_API_KEY not set")
+		logging.Error("Missing required environment variable: OPENWEATHER_API_KEY", nil)
+		os.Exit(1)
 	}
 
 	if githubClientID == "" || githubClientSecret == "" {
-		log.Fatal("GITHUB_CLIENT_ID and GITHUB_CLIENT_SECRET must be set")
+		logging.Error("Missing required environment variables: GITHUB_CLIENT_ID and/or GITHUB_CLIENT_SECRET", nil)
+		os.Exit(1)
 	}
 
 	if jwtSecret == "" {
-		log.Fatal("JWT_SECRET not set")
+		logging.Error("Missing required environment variable: JWT_SECRET", nil)
+		os.Exit(1)
 	}
+
+	logging.Info("Configuration loaded successfully")
 
 	return &Config{
 		Port:               port,
