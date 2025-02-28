@@ -29,4 +29,4 @@ jobs:
           port: 22
           script: |
             cd /var/www/breeze
-            docker-compose -f docker-compose.prod.yml up -d --build
+            docker-compose -f docker-compose.yml up -d --build
