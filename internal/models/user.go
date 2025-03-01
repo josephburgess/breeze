@@ -5,16 +5,14 @@ import (
 )
 
 type User struct {
-	ID          uint      `gorm:"primaryKey" json:"id"`
-	GithubID    int64     `gorm:"unique;not null" json:"github_id"`
-	Login       string    `gorm:"not null" json:"login"`
-	Name        *string   `json:"name,omitempty"`
-	Email       *string   `json:"email,omitempty"`
-	AvatarURL   *string   `json:"avatar_url,omitempty"`
-	Token       string    `gorm:"not null" json:"-"`
-	CreatedAt   time.Time `gorm:"autoCreateTime" json:"created_at"`
-	LastLogin   time.Time `gorm:"autoUpdateTime" json:"last_login"`
-	StarredRepo bool      `gorm:"default:false" json:"starred_repo"`
+	ID        uint      `gorm:"primaryKey" json:"id"`
+	GithubID  int64     `gorm:"unique;not null" json:"github_id"`
+	Login     string    `gorm:"not null" json:"login"`
+	Name      *string   `json:"name,omitempty"`
+	Email     *string   `json:"email,omitempty"`
+	Token     string    `gorm:"not null" json:"-"`
+	CreatedAt time.Time `gorm:"autoCreateTime" json:"created_at"`
+	LastLogin time.Time `gorm:"autoUpdateTime" json:"last_login"`
 }
 
 type ApiCredential struct {

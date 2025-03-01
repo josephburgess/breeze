@@ -23,6 +23,5 @@ func (h *UserHandler) GetUser(w http.ResponseWriter, r *http.Request) {
 		"login":     user.Login,
 		"name":      user.Name,
 		"email":     user.Email,
-		"avatar":    user.AvatarURL,
 	})
 }
