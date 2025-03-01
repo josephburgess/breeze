@@ -1,5 +1,4 @@
 version: "3.8"
-
 services:
   breeze:
     build:
@@ -8,8 +7,14 @@ services:
     container_name: breeze
     restart: unless-stopped
     env_file:
-      - /var/www/breeze/.env
+      - .env
     ports:
       - "8080:8080"
     volumes:
       - /var/www/breeze/data:/app/data
+    networks:
+      - joeburgess-network
+
+networks:
+  joeburgess-network:
+    name: joeburgess-network
