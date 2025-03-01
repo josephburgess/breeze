@@ -22,7 +22,7 @@ func Load() *Config {
 		logging.Warn(".env file not found")
 	}
 
-	port := getEnv("PORT", "8081")
+	port := getEnv("PORT", "8080")
 	dbPath := getEnv("DB_PATH", "gust.db")
 	openWeatherAPIKey := getEnv("OPENWEATHER_API_KEY", "")
 	githubClientID := getEnv("GITHUB_CLIENT_ID", "")

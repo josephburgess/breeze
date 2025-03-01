@@ -42,6 +42,5 @@ jobs:
             DB_PATH=${{ secrets.DB_PATH }}
             EOF
 
-            docker-compose down || true
-            docker-compose build --no-cache
-            docker-compose up -d --remove-orphans
+            docker compose down || true
+            docker compose up -d --build --remove-orphans
