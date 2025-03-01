@@ -1,21 +1,27 @@
 package models
 
-import "time"
+import (
+	"time"
+)
 
 type User struct {
-	ID        int64  `json:"id"`
-	Login     string `json:"login"`
-	Name      string `json:"name"`
-	Email     string `json:"email"`
-	AvatarURL string `json:"avatar_url"`
-	Token     string `json:"-"`
+	ID        uint      `gorm:"primaryKey" json:"id"`
+	GithubID  int64     `gorm:"unique;not null" json:"github_id"`
+	Login     string    `gorm:"not null" json:"login"`
+	Name      *string   `json:"name,omitempty"`
+	Email     *string   `json:"email,omitempty"`
+	Token     string    `gorm:"not null" json:"-"`
+	CreatedAt time.Time `gorm:"autoCreateTime" json:"created_at"`
+	LastLogin time.Time `gorm:"autoUpdateTime" json:"last_login"`
 }
 
 type ApiCredential struct {
-	ID           string    `json:"id"`
-	GithubUserID int64     `json:"github_user_id"`
-	ApiKey       string    `json:"api_key"`
-	LastUsed     time.Time `json:"last_used"`
-	CreatedAt    time.Time `json:"created_at"`
-	RequestCount int       `json:"request_count"`
+	ID           string     `gorm:"primaryKey" json:"id"`
+	GithubUserID int64      `gorm:"not null;index" json:"github_user_id"`
+	ApiKey       string     `gorm:"unique;not null" json:"api_key"`
+	LastUsed     *time.Time `json:"last_used,omitempty"`
+	CreatedAt    time.Time  `gorm:"autoCreateTime" json:"created_at"`
+	RequestCount int        `gorm:"default:0" json:"request_count"`
+
+	User User `gorm:"foreignKey:GithubUserID;references:GithubID" json:"-"`
 }

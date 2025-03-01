@@ -23,8 +23,12 @@ func NewWeatherHandler(weatherClient *weather.Client) *WeatherHandler {
 func (h *WeatherHandler) GetWeather(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	cityName := vars["city"]
+	units := r.URL.Query().Get("units")
 
 	logging.Info("Fetching weather for city: %s", cityName)
+	if units != "" {
+		logging.Info("Using units: %s", units)
+	}
 
 	city, err := h.weatherClient.GetCoordinates(cityName)
 	if err != nil {
@@ -35,7 +39,7 @@ func (h *WeatherHandler) GetWeather(w http.ResponseWriter, r *http.Request) {
 
 	logging.Info("Found city: %s (Lat: %f, Lon: %f)", city.Name, city.Lat, city.Lon)
 
-	weather, err := h.weatherClient.GetWeather(city.Lat, city.Lon)
+	weather, err := h.weatherClient.GetWeather(city.Lat, city.Lon, units)
 	if err != nil {
 		logging.Error("Error getting weather", err)
 		http.Error(w, "Error getting weather", http.StatusInternalServerError)

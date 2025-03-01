@@ -48,8 +48,19 @@ func (c *Client) GetCoordinates(city string) (*models.City, error) {
 	return &cities[0], nil
 }
 
-func (c *Client) GetWeather(lat, lon float64) (*models.OneCallResponse, error) {
-	url := fmt.Sprintf("%sdata/3.0/onecall?lat=%f&lon=%f&appid=%s", c.BaseURL, lat, lon, c.ApiKey)
+func (c *Client) GetWeather(lat, lon float64, units string) (*models.OneCallResponse, error) {
+	var url string
+
+	if units != "" {
+		url = fmt.Sprintf("%sdata/3.0/onecall?lat=%f&lon=%f&appid=%s&units=%s",
+			c.BaseURL, lat, lon, c.ApiKey, units)
+		logging.Info("Fetching weather data with units=%s", units)
+	} else {
+		url = fmt.Sprintf("%sdata/3.0/onecall?lat=%f&lon=%f&appid=%s",
+			c.BaseURL, lat, lon, c.ApiKey)
+		logging.Info("Fetching weather data with default units (Kelvin)")
+	}
+
 	logging.Info("Fetching weather data for lat: %f, lon: %f", lat, lon)
 
 	resp, err := http.Get(url)
