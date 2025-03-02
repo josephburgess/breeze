@@ -93,7 +93,7 @@ func (h *AuthHandler) handleGitHubAuthCode(code, state string) (*models.User, st
 		return nil, "", fmt.Errorf("failed to save user: %w", err)
 	}
 
-	credential, err := h.userStore.CreateAPICredential(user.GithubID)
+	credential, err := h.userStore.GetOrCreateAPICredential(user.GithubID)
 	if err != nil {
 		logging.Error("Failed to create API credential", err)
 		return nil, "", fmt.Errorf("failed to create API credential: %w", err)
