@@ -2,6 +2,8 @@
 
 Breeze is a Go-based api/middleware service that provides a secure, authenticated proxy to the OpenWeatherMap API. It serves as the backend for my [gust](https://github.com/josephburgess/gust) weather tui app, and also serves a silly widget on my personal site [http://joeburgess.dev](http://joeburgess.dev).
 
+If you need a weather API you're probably better off going straight to the source, this is quite a specific solution, but its been a fun project and works well for my use cases!
+
 ## Features
 
 - **GitHub OAuth Authentication**: Secure user authentication via GitHub
@@ -21,8 +23,7 @@ Breeze is a Go-based api/middleware service that provides a secure, authenticate
 API key required for these:
 
 - `GET /api/user` - Get current user information
-- `GET /api/weather/{city}` - Get weather data for a specific city
-  - Optional query parameter: `units` (metric, imperial)
+- `GET /api/weather/{city}` - Get weather data for a specific city (can also specify `units` - metric/imperial)
 
 ## Getting Started
 
