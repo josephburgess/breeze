@@ -8,20 +8,6 @@ Breeze is a Go-based api/middleware service that provides a secure, authenticate
 - **API Key Management**: Generates and validates API keys for `gust`
 - **Weather Data Proxy**: Fetches/transforms data from OpenWeatherMap
 
-## Architecture
-
-```
-breeze/
-├── cmd/                  # Application entry points
-├── internal/
-│   ├── api/              # HTTP handlers / router
-│   ├── config/           # config management
-│   ├── logging/          # logger
-│   ├── models/           # data models
-│   ├── services/         # business logic
-│   └── templates/        # HTML template for confirming GH auth
-```
-
 ## API Endpoints
 
 ### Public Endpoints
