@@ -15,6 +15,7 @@ type Config struct {
 	GithubClientSecret string
 	GithubRedirectURI  string
 	JWTSecret          string
+	BaseServerURL      string
 }
 
 func Load() *Config {
@@ -29,6 +30,7 @@ func Load() *Config {
 	githubClientSecret := getEnv("GITHUB_CLIENT_SECRET", "")
 	githubRedirectURI := getEnv("GITHUB_REDIRECT_URI", "http://localhost:8080/api/auth/callback")
 	jwtSecret := getEnv("JWT_SECRET", "")
+	baseServerURL := getEnv("BASE_SERVER_URL", "")
 
 	if openWeatherAPIKey == "" {
 		logging.Error("Missing required environment variable: OPENWEATHER_API_KEY", nil)
@@ -55,6 +57,7 @@ func Load() *Config {
 		GithubClientSecret: githubClientSecret,
 		GithubRedirectURI:  githubRedirectURI,
 		JWTSecret:          jwtSecret,
+		BaseServerURL:      baseServerURL,
 	}
 }
 

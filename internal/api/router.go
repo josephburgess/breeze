@@ -9,11 +9,11 @@ import (
 	"github.com/josephburgess/breeze/internal/services/weather"
 )
 
-func NewRouter(weatherClient *weather.Client, userStore *store.UserStore, githubOAuth *auth.GitHubOAuth) *mux.Router {
+func NewRouter(weatherClient *weather.Client, userStore *store.UserStore, githubOAuth *auth.GitHubOAuth, baseServerURL string) *mux.Router {
 	router := mux.NewRouter()
 
 	// create handlers
-	authHandler := handlers.NewAuthHandler(githubOAuth, userStore)
+	authHandler := handlers.NewAuthHandler(githubOAuth, userStore, baseServerURL)
 	userHandler := handlers.NewUserHandler()
 	weatherHandler := handlers.NewWeatherHandler(weatherClient)
 
