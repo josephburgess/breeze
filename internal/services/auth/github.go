@@ -118,13 +118,26 @@ func (g *GitHubOAuth) GetUserInfo(token string) (*models.User, error) {
 		return nil, fmt.Errorf("github API returned status %d", resp.StatusCode)
 	}
 
-	var user models.User
-	if err := json.NewDecoder(resp.Body).Decode(&user); err != nil {
+	var githubResponse struct {
+		ID    int64   `json:"id"`
+		Login string  `json:"login"`
+		Name  *string `json:"name"`
+		Email *string `json:"email"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&githubResponse); err != nil {
 		logging.Error("Failed to decode user info", err)
 		return nil, fmt.Errorf("failed to decode user info: %w", err)
 	}
 
-	logging.Info("Successfully retrieved GitHub user: %s", user.Login)
-	user.Token = token
-	return &user, nil
+	user := &models.User{
+		GithubID: githubResponse.ID,
+		Login:    githubResponse.Login,
+		Name:     githubResponse.Name,
+		Email:    githubResponse.Email,
+		Token:    token,
+	}
+
+	logging.Info("Successfully retrieved GitHub user: %s (ID: %d)", user.Login, user.GithubID)
+	return user, nil
 }
