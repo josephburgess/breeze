@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
@@ -53,7 +54,23 @@ func (s *UserStore) Close() error {
 
 func (s *UserStore) SaveUser(user *models.User) error {
 	logging.Info("Saving user: %d (%s)", user.GithubID, user.Login)
-	return s.db.Save(user).Error
+
+	var existingUser models.User
+	result := s.db.Where("github_id = ?", user.GithubID).First(&existingUser)
+
+	if result.Error == nil {
+		existingUser.Login = user.Login
+		existingUser.Name = user.Name
+		existingUser.Email = user.Email
+		existingUser.Token = user.Token
+		existingUser.LastLogin = time.Now()
+
+		return s.db.Save(&existingUser).Error
+	} else if errors.Is(result.Error, gorm.ErrRecordNotFound) {
+		return s.db.Create(user).Error
+	} else {
+		return result.Error
+	}
 }
 
 func (s *UserStore) GetUser(githubID int64) (*models.User, error) {
@@ -68,6 +85,38 @@ func (s *UserStore) GetUser(githubID int64) (*models.User, error) {
 	}
 
 	return &user, nil
+}
+
+func (s *UserStore) GetOrCreateAPICredential(githubUserID int64) (*models.ApiCredential, error) {
+	var count int64
+	if err := s.db.Model(&models.User{}).Where("github_id = ?", githubUserID).Count(&count).Error; err != nil {
+		logging.Error("db error while checking for user", err)
+		return nil, err
+	}
+	if count == 0 {
+		logging.Warn("user with ID %d not found", githubUserID)
+		return nil, fmt.Errorf("user with ID %d not found", githubUserID)
+	}
+
+	var credential models.ApiCredential
+	err := s.db.Where("github_user_id = ?", githubUserID).First(&credential).Error
+
+	if err == nil {
+		logging.Info("Found existing API credential for user: %d", githubUserID)
+
+		if err := s.db.Model(&credential).Updates(map[string]any{
+			"last_used": gorm.Expr("CURRENT_TIMESTAMP"),
+		}).Error; err != nil {
+			logging.Error("Failed to update API key last used timestamp", err)
+		}
+
+		return &credential, nil
+	} else if errors.Is(err, gorm.ErrRecordNotFound) {
+		return s.CreateAPICredential(githubUserID)
+	} else {
+		logging.Error("Database error while checking for credentials", err)
+		return nil, err
+	}
 }
 
 func (s *UserStore) CreateAPICredential(githubUserID int64) (*models.ApiCredential, error) {
