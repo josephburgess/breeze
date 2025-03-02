@@ -29,7 +29,7 @@ func main() {
 		cfg.GithubRedirectURI,
 	)
 
-	router := api.NewRouter(weatherClient, userStore, githubOAuth, cfg.BaseServerURL)
+	router := api.NewRouter(weatherClient, userStore, githubOAuth, cfg.BaseServerURL, cfg.IsProd)
 	router.Use(logging.Middleware)
 
 	logging.Info("Starting server on port %s", cfg.Port)

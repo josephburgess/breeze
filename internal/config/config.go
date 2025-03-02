@@ -2,6 +2,7 @@ package config
 
 import (
 	"os"
+	"strings"
 
 	"github.com/joho/godotenv"
 	"github.com/josephburgess/breeze/internal/logging"
@@ -16,6 +17,7 @@ type Config struct {
 	GithubRedirectURI  string
 	JWTSecret          string
 	BaseServerURL      string
+	IsProd             bool // Production mode flag
 }
 
 func Load() *Config {
@@ -31,6 +33,19 @@ func Load() *Config {
 	githubRedirectURI := getEnv("GITHUB_REDIRECT_URI", "http://localhost:8080/api/auth/callback")
 	jwtSecret := getEnv("JWT_SECRET", "")
 	baseServerURL := getEnv("BASE_SERVER_URL", "")
+	environment := getEnv("ENVIRONMENT", "development")
+
+	isProd := false
+
+	if strings.ToLower(environment) == "production" {
+		isProd = true
+
+		if baseServerURL == "" {
+			logging.Error("Production mode requires BASE_SERVER_URL to be set", nil)
+			logging.Warn("Falling back to development mode due to missing BASE_SERVER_URL")
+			isProd = false
+		}
+	}
 
 	if openWeatherAPIKey == "" {
 		logging.Error("Missing required environment variable: OPENWEATHER_API_KEY", nil)
@@ -47,7 +62,11 @@ func Load() *Config {
 		os.Exit(1)
 	}
 
-	logging.Info("Configuration loaded successfully")
+	if isProd {
+		logging.Info("Running in PRODUCTION mode with base URL: %s", baseServerURL)
+	} else {
+		logging.Info("Running in DEVELOPMENT mode")
+	}
 
 	return &Config{
 		Port:               port,
@@ -58,6 +77,7 @@ func Load() *Config {
 		GithubRedirectURI:  githubRedirectURI,
 		JWTSecret:          jwtSecret,
 		BaseServerURL:      baseServerURL,
+		IsProd:             isProd,
 	}
 }
 

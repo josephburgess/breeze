@@ -41,6 +41,7 @@ jobs:
             JWT_SECRET=${{ secrets.JWT_SECRET }}
             DB_PATH=${{ secrets.DB_PATH }}
             BASE_SERVER_URL=${{ secrets.BASE_SERVER_URL }}
+            ENVIRONMENT=${{ secrets.ENVIRONMENT || 'production' }}
             EOF
 
             docker compose down || true
