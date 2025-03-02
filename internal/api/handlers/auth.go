@@ -14,28 +14,39 @@ import (
 )
 
 type AuthHandler struct {
-	githubOAuth *auth.GitHubOAuth
-	userStore   *store.UserStore
+	githubOAuth   *auth.GitHubOAuth
+	userStore     *store.UserStore
+	baseServerURL string
 }
 
-func NewAuthHandler(githubOAuth *auth.GitHubOAuth, userStore *store.UserStore) *AuthHandler {
+func NewAuthHandler(githubOAuth *auth.GitHubOAuth, userStore *store.UserStore, baseServerURL string) *AuthHandler {
+	if baseServerURL == "" {
+		baseServerURL = ""
+	}
+
 	return &AuthHandler{
-		githubOAuth: githubOAuth,
-		userStore:   userStore,
+		githubOAuth:   githubOAuth,
+		userStore:     userStore,
+		baseServerURL: baseServerURL,
 	}
 }
 
 func (h *AuthHandler) RequestAuth(w http.ResponseWriter, r *http.Request) {
 	callbackPort := r.URL.Query().Get("callback_port")
-	if callbackPort == "" {
-		callbackPort = "9876"
+	isLocalClient := callbackPort != ""
+
+	if isLocalClient {
+		logging.Info("Local client auth request detected with callback port: %s", callbackPort)
+		callbackURL := fmt.Sprintf("http://localhost:%s/callback", callbackPort)
+		h.githubOAuth.RedirectURI = callbackURL
+	} else if h.baseServerURL != "" {
+		logging.Info("Production auth request detected")
+		h.githubOAuth.RedirectURI = fmt.Sprintf("%s/api/auth/callback", h.baseServerURL)
 	}
 
-	callbackURL := fmt.Sprintf("http://localhost:%s/callback", callbackPort)
-	h.githubOAuth.RedirectURI = callbackURL
 	authURL, state := h.githubOAuth.GetAuthURL()
-
 	logging.Info("Generated authentication URL: %s", authURL)
+	logging.Info("Using redirect URI: %s", h.githubOAuth.RedirectURI)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{
