@@ -17,31 +17,29 @@ type AuthHandler struct {
 	githubOAuth   *auth.GitHubOAuth
 	userStore     *store.UserStore
 	baseServerURL string
+	isProd        bool
 }
 
-func NewAuthHandler(githubOAuth *auth.GitHubOAuth, userStore *store.UserStore, baseServerURL string) *AuthHandler {
-	if baseServerURL == "" {
-		baseServerURL = ""
-	}
-
+func NewAuthHandler(githubOAuth *auth.GitHubOAuth, userStore *store.UserStore, baseServerURL string, isProd bool) *AuthHandler {
 	return &AuthHandler{
 		githubOAuth:   githubOAuth,
 		userStore:     userStore,
 		baseServerURL: baseServerURL,
+		isProd:        isProd,
 	}
 }
 
 func (h *AuthHandler) RequestAuth(w http.ResponseWriter, r *http.Request) {
 	callbackPort := r.URL.Query().Get("callback_port")
-	isLocalClient := callbackPort != ""
 
-	if isLocalClient {
-		logging.Info("Local client auth request detected with callback port: %s", callbackPort)
+	if h.isProd && h.baseServerURL != "" {
+		prodCallbackURL := fmt.Sprintf("%s/api/auth/callback", h.baseServerURL)
+		logging.Info("Production auth request - ignoring client callback, using: %s", prodCallbackURL)
+		h.githubOAuth.RedirectURI = prodCallbackURL
+	} else if callbackPort != "" {
 		callbackURL := fmt.Sprintf("http://localhost:%s/callback", callbackPort)
+		logging.Info("Local client auth request with callback port: %s", callbackPort)
 		h.githubOAuth.RedirectURI = callbackURL
-	} else if h.baseServerURL != "" {
-		logging.Info("Production auth request detected")
-		h.githubOAuth.RedirectURI = fmt.Sprintf("%s/api/auth/callback", h.baseServerURL)
 	}
 
 	authURL, state := h.githubOAuth.GetAuthURL()
@@ -59,7 +57,7 @@ func (h *AuthHandler) Callback(w http.ResponseWriter, r *http.Request) {
 	code := r.URL.Query().Get("code")
 	state := r.URL.Query().Get("state")
 
-	if strings.HasPrefix(h.githubOAuth.RedirectURI, "http://localhost:") {
+	if !h.isProd && strings.HasPrefix(h.githubOAuth.RedirectURI, "http://localhost:") {
 		redirectURL := fmt.Sprintf("%s?code=%s&state=%s", h.githubOAuth.RedirectURI, code, state)
 		logging.Info("Redirecting to local callback: %s", redirectURL)
 		http.Redirect(w, r, redirectURL, http.StatusFound)
@@ -126,7 +124,11 @@ func (h *AuthHandler) ExchangeToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.githubOAuth.RedirectURI = fmt.Sprintf("http://localhost:%d/callback", request.CallbackPort)
+	if h.isProd && h.baseServerURL != "" {
+		h.githubOAuth.RedirectURI = fmt.Sprintf("%s/api/auth/callback", h.baseServerURL)
+	} else {
+		h.githubOAuth.RedirectURI = fmt.Sprintf("http://localhost:%d/callback", request.CallbackPort)
+	}
 
 	user, apiKey, err := h.handleGitHubAuthCode(request.Code, "")
 	if err != nil {
