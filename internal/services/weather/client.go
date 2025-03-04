@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
+	"strings"
 
 	"github.com/josephburgess/breeze/internal/logging"
 	"github.com/josephburgess/breeze/internal/models"
@@ -88,10 +88,8 @@ func (c *Client) GetWeather(lat, lon float64, units string) (*models.OneCallResp
 }
 
 func (c *Client) SearchCities(query string, limit int) ([]models.City, error) {
-	encodedQuery := url.QueryEscape(query)
-	url := fmt.Sprintf("%sgeo/1.0/direct?q=%s&limit=%d&appid=%s", c.BaseURL, encodedQuery, limit, c.ApiKey)
-	logging.Info("Searching cities with query: %s, limit: %d", query, limit)
-	logging.Info("Full URL: %s", url) // Log the URL for debugging (remove API key in production)
+	processedQuery := strings.ReplaceAll(query, " ", "")
+	url := fmt.Sprintf("%sgeo/1.0/direct?q=%s&limit=%d&appid=%s", c.BaseURL, processedQuery, limit, c.ApiKey)
 
 	resp, err := http.Get(url)
 	if err != nil {
@@ -103,7 +101,7 @@ func (c *Client) SearchCities(query string, limit int) ([]models.City, error) {
 	if resp.StatusCode != http.StatusOK {
 		bodyBytes, _ := io.ReadAll(resp.Body)
 		bodyText := string(bodyBytes)
-		return nil, fmt.Errorf("API returned status %d", resp.StatusCode, bodyText)
+		return nil, fmt.Errorf("API returned status %d %s", resp.StatusCode, bodyText)
 	}
 
 	bodyBytes, err := io.ReadAll(resp.Body)
