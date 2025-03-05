@@ -17,6 +17,7 @@ If you need a weather API you're probably better off going straight to the sourc
 - `GET /api/auth/request` - initiates GitHub OAuth flow
 - `GET /api/auth/callback` - OAuth callback handler
 - `POST /api/auth/exchange` - exchange OAuth code for API key
+- `GET /api/cities/search` - search for city choices to set defaults 
 
 ### Authenticated Endpoints
 
