@@ -21,6 +21,7 @@ func NewRouter(weatherClient *weather.Client, userStore *store.UserStore, github
 	router.HandleFunc("/api/auth/request", authHandler.RequestAuth).Methods("GET")
 	router.HandleFunc("/api/auth/callback", authHandler.Callback).Methods("GET")
 	router.HandleFunc("/api/auth/exchange", authHandler.ExchangeToken).Methods("POST")
+	router.HandleFunc("/api/cities/search", weatherHandler.SearchCities).Methods("GET")
 
 	// auth'ed routes (needs key)
 	apiRouter := router.PathPrefix("/api").Subrouter()

@@ -3,7 +3,9 @@ package weather
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
+	"net/url"
 
 	"github.com/josephburgess/breeze/internal/logging"
 	"github.com/josephburgess/breeze/internal/models"
@@ -83,4 +85,42 @@ func (c *Client) GetWeather(lat, lon float64, units string) (*models.OneCallResp
 
 	logging.Info("Successfully fetched weather data for lat: %f, lon: %f", lat, lon)
 	return &result, nil
+}
+
+func (c *Client) SearchCities(query string, limit int) ([]models.City, error) {
+	escapedQuery := url.QueryEscape(query)
+	url := fmt.Sprintf("%sgeo/1.0/direct?q=%s&limit=%d&appid=%s", c.BaseURL, escapedQuery, limit, c.ApiKey)
+
+	resp, err := http.Get(url)
+	if err != nil {
+		logging.Error("HTTP request failed", err)
+		return nil, fmt.Errorf("HTTP request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		data, _ := io.ReadAll(resp.Body)
+		body := string(data)
+		return nil, fmt.Errorf("API returned status %d %s", resp.StatusCode, body)
+	}
+
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		logging.Error("Failed to read response body", err)
+		return nil, fmt.Errorf("failed to read response body: %w", err)
+	}
+
+	var cities []models.City
+	if err := json.Unmarshal(data, &cities); err != nil {
+		logging.Error("Failed to decode JSON response", err)
+		return nil, fmt.Errorf("unmarshaling JSON: %w", err)
+	}
+
+	if len(cities) == 0 {
+		logging.Warn("No cities found for query: %s", query)
+		return []models.City{}, nil
+	}
+
+	logging.Info("Found %d cities for query: %s", len(cities), query)
+	return cities, nil
 }

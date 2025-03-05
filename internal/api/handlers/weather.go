@@ -56,3 +56,27 @@ func (h *WeatherHandler) GetWeather(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(response)
 }
+
+func (h *WeatherHandler) SearchCities(w http.ResponseWriter, r *http.Request) {
+	query := r.URL.Query().Get("q")
+	if query == "" {
+		http.Error(w, "City query parameter is required", http.StatusBadRequest)
+		return
+	}
+
+	limit := 5
+
+	logging.Info("Searching cities for query: %s", query)
+
+	cities, err := h.weatherClient.SearchCities(query, limit)
+	if err != nil {
+		logging.Error("Error searching cities", err)
+		http.Error(w, "Error searching cities", http.StatusInternalServerError)
+		return
+	}
+
+	logging.Info("Found %d cities for query: %s", len(cities), query)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(cities)
+}
