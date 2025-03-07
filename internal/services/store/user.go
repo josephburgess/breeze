@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"gorm.io/driver/sqlite"
@@ -132,13 +133,18 @@ func (s *UserStore) CreateAPICredential(githubUserID int64) (*models.ApiCredenti
 
 	apiKey := generateAPIKey()
 	apiCredential := &models.ApiCredential{
-		ID:           apiKey,
-		GithubUserID: githubUserID,
-		ApiKey:       apiKey,
+		ID:              apiKey,
+		GithubUserID:    githubUserID,
+		ApiKey:          apiKey,
+		DailyResetAt:    time.Now().UTC(),
+		RateLimitPerDay: 50,
 	}
 
 	if err := s.db.Create(apiCredential).Error; err != nil {
 		logging.Error("Failed to create API credential", err)
+		if strings.Contains(err.Error(), "UNIQUE constraint") {
+			return nil, fmt.Errorf("user already has an API key")
+		}
 		return nil, err
 	}
 
@@ -159,15 +165,46 @@ func (s *UserStore) ValidateAPIKey(apiKey string) (*models.User, error) {
 		return nil, err
 	}
 
-	if err := s.db.Model(&credential).Updates(map[string]any{
-		"last_used":     gorm.Expr("CURRENT_TIMESTAMP"),
+	now := time.Now().UTC()
+	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
+
+	updates := map[string]any{
+		"last_used":     now,
 		"request_count": gorm.Expr("request_count + 1"),
-	}).Error; err != nil {
+	}
+
+	if credential.DailyResetAt.Before(today) {
+		updates["daily_request_count"] = 1
+		updates["daily_reset_at"] = today
+	} else {
+		if credential.DailyRequestCount >= credential.RateLimitPerDay {
+			return nil, &RateLimitError{
+				Message:   fmt.Sprintf("rate limit exceeded: maximum of %d requests per day", credential.RateLimitPerDay),
+				ResetTime: credential.DailyResetAt.Add(24 * time.Hour),
+				RateLimit: credential.RateLimitPerDay,
+				Remaining: 0,
+			}
+		}
+		updates["daily_request_count"] = gorm.Expr("daily_request_count + 1")
+	}
+
+	if err := s.db.Model(&credential).Updates(updates).Error; err != nil {
 		logging.Error("Failed to update API key usage", err)
-		return nil, err
+		return nil, fmt.Errorf("failed to update API key usage: %w", err)
 	}
 
 	return s.GetUser(credential.GithubUserID)
+}
+
+type RateLimitError struct {
+	Message   string
+	ResetTime time.Time
+	RateLimit int
+	Remaining int
+}
+
+func (e *RateLimitError) Error() string {
+	return e.Message
 }
 
 func generateAPIKey() string {

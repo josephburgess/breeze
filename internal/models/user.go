@@ -16,12 +16,14 @@ type User struct {
 }
 
 type ApiCredential struct {
-	ID           string     `gorm:"primaryKey" json:"id"`
-	GithubUserID int64      `gorm:"not null;index" json:"github_user_id"`
-	ApiKey       string     `gorm:"unique;not null" json:"api_key"`
-	LastUsed     *time.Time `json:"last_used,omitempty"`
-	CreatedAt    time.Time  `gorm:"autoCreateTime" json:"created_at"`
-	RequestCount int        `gorm:"default:0" json:"request_count"`
-
-	User User `gorm:"foreignKey:GithubUserID;references:GithubID" json:"-"`
+	ID                string     `gorm:"primaryKey" json:"id"`
+	GithubUserID      int64      `gorm:"not null;unique;index" json:"github_user_id"`
+	ApiKey            string     `gorm:"unique;not null" json:"api_key"`
+	LastUsed          *time.Time `json:"last_used,omitempty"`
+	CreatedAt         time.Time  `gorm:"autoCreateTime" json:"created_at"`
+	RequestCount      int        `gorm:"default:0" json:"request_count"`
+	User              User       `gorm:"foreignKey:GithubUserID;references:GithubID" json:"-"`
+	DailyRequestCount int        `gorm:"default:0"`
+	RateLimitPerDay   int        `gorm:"default:50"`
+	DailyResetAt      time.Time  `gorm:"not null;default:CURRENT_TIMESTAMP"`
 }

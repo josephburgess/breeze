@@ -2,7 +2,9 @@ package middleware
 
 import (
 	"context"
+	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/josephburgess/breeze/internal/logging"
 	"github.com/josephburgess/breeze/internal/services/store"
@@ -27,6 +29,13 @@ func ApiKeyAuth(userStore *store.UserStore) func(http.Handler) http.Handler {
 
 			user, err := userStore.ValidateAPIKey(apiKey)
 			if err != nil {
+				if rateLimitErr, ok := err.(*store.RateLimitError); ok {
+					w.Header().Set("X-RateLimit-Limit", fmt.Sprintf("%d", rateLimitErr.RateLimit))
+					w.Header().Set("X-RateLimit-Remaining", fmt.Sprintf("%d", rateLimitErr.Remaining))
+					w.Header().Set("X-RateLimit-Reset", rateLimitErr.ResetTime.Format(time.RFC3339))
+					http.Error(w, rateLimitErr.Message, http.StatusTooManyRequests)
+					return
+				}
 				logging.Warn("Invalid API key attempted: %s", apiKey)
 				http.Error(w, "Invalid API key", http.StatusUnauthorized)
 				return
