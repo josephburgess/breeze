@@ -193,14 +193,19 @@ func (s *UserStore) ValidateAPIKey(apiKey string) (*models.User, error) {
 		"request_count": gorm.Expr("request_count + 1"),
 	}
 
-	if credential.DailyResetAt.Before(today) {
+	if credential.DailyResetAt.IsZero() || credential.DailyResetAt.Before(today) {
 		updates["daily_request_count"] = 1
 		updates["daily_reset_at"] = today
 	} else {
 		if credential.DailyRequestCount >= credential.RateLimitPerDay {
+			resetTime := today.Add(24 * time.Hour)
+			if !credential.DailyResetAt.IsZero() {
+				resetTime = credential.DailyResetAt.Add(24 * time.Hour)
+			}
+
 			return nil, &RateLimitError{
 				Message:   fmt.Sprintf("rate limit exceeded: maximum of %d requests per day", credential.RateLimitPerDay),
-				ResetTime: credential.DailyResetAt.Add(24 * time.Hour),
+				ResetTime: resetTime,
 				RateLimit: credential.RateLimitPerDay,
 				Remaining: 0,
 			}

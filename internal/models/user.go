@@ -27,7 +27,7 @@ type ApiCredential struct {
 	User              User       `gorm:"foreignKey:GithubUserID;references:GithubID" json:"-"`
 	DailyRequestCount int        `gorm:"default:0"`
 	RateLimitPerDay   int        `gorm:"default:40"`
-	DailyResetAt      time.Time  `gorm:"not null"`
+	DailyResetAt      time.Time
 }
 
 func (a *ApiCredential) BeforeCreate(tx *gorm.DB) error {
