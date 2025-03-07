@@ -10,12 +10,10 @@ import (
 )
 
 func setupTestDB(t *testing.T) *UserStore {
-	// Use in-memory SQLite for testing with a shared cache
 	store, err := NewUserStore("file::memory:?cache=shared")
 	require.NoError(t, err)
 	require.NotNil(t, store)
 
-	// Ensure tables are created
 	err = store.db.AutoMigrate(&models.User{}, &models.ApiCredential{})
 	require.NoError(t, err)
 
@@ -66,7 +64,6 @@ func TestUserStore_SaveUser(t *testing.T) {
 			}
 			assert.NoError(t, err)
 
-			// Verify user was saved
 			savedUser, err := store.GetUser(tt.user.GithubID)
 			require.NoError(t, err)
 			assert.Equal(t, tt.user.Login, savedUser.Login)
@@ -78,7 +75,6 @@ func TestUserStore_SaveUser(t *testing.T) {
 func TestUserStore_GetOrCreateAPICredential(t *testing.T) {
 	store := setupTestDB(t)
 
-	// Create a test user first
 	user := &models.User{
 		GithubID: 123,
 		Login:    "testuser",
@@ -112,7 +108,6 @@ func TestUserStore_GetOrCreateAPICredential(t *testing.T) {
 func TestUserStore_ValidateAPIKey(t *testing.T) {
 	store := setupTestDB(t)
 
-	// Create a test user and API credential
 	user := &models.User{
 		GithubID: 123,
 		Login:    "testuser",
@@ -136,7 +131,6 @@ func TestUserStore_ValidateAPIKey(t *testing.T) {
 	})
 
 	t.Run("rate limit exceeded", func(t *testing.T) {
-		// Set daily request count to limit
 		err := store.db.Model(&models.ApiCredential{}).
 			Where("api_key = ?", cred.ApiKey).
 			Updates(map[string]interface{}{
@@ -152,7 +146,6 @@ func TestUserStore_ValidateAPIKey(t *testing.T) {
 	})
 
 	t.Run("daily reset", func(t *testing.T) {
-		// Set daily reset time to yesterday
 		yesterday := time.Now().UTC().Add(-24 * time.Hour)
 		err := store.db.Model(&models.ApiCredential{}).
 			Where("api_key = ?", cred.ApiKey).
@@ -162,12 +155,10 @@ func TestUserStore_ValidateAPIKey(t *testing.T) {
 			}).Error
 		require.NoError(t, err)
 
-		// Should reset counter and allow request
 		validatedUser, err := store.ValidateAPIKey(cred.ApiKey)
 		require.NoError(t, err)
 		assert.Equal(t, user.GithubID, validatedUser.GithubID)
 
-		// Verify counter was reset and incremented
 		var updatedCred models.ApiCredential
 		err = store.db.Where("api_key = ?", cred.ApiKey).First(&updatedCred).Error
 		require.NoError(t, err)
@@ -175,7 +166,6 @@ func TestUserStore_ValidateAPIKey(t *testing.T) {
 	})
 
 	t.Run("request counting", func(t *testing.T) {
-		// Reset the counter
 		err := store.db.Model(&models.ApiCredential{}).
 			Where("api_key = ?", cred.ApiKey).
 			Updates(map[string]interface{}{
@@ -184,14 +174,12 @@ func TestUserStore_ValidateAPIKey(t *testing.T) {
 			}).Error
 		require.NoError(t, err)
 
-		// Make a few requests
 		numRequests := 3
 		for i := 0; i < numRequests; i++ {
 			_, err := store.ValidateAPIKey(cred.ApiKey)
 			require.NoError(t, err)
 		}
 
-		// Verify the counter
 		var updatedCred models.ApiCredential
 		err = store.db.Where("api_key = ?", cred.ApiKey).First(&updatedCred).Error
 		require.NoError(t, err)
@@ -202,7 +190,6 @@ func TestUserStore_ValidateAPIKey(t *testing.T) {
 func TestUserStore_CreateAPICredential(t *testing.T) {
 	store := setupTestDB(t)
 
-	// Create a test user
 	user := &models.User{
 		GithubID: 123,
 		Login:    "testuser",
@@ -224,7 +211,6 @@ func TestUserStore_CreateAPICredential(t *testing.T) {
 	})
 
 	t.Run("prevent duplicate credentials", func(t *testing.T) {
-		// First creation should succeed
 		_, err := store.CreateAPICredential(user.GithubID)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "user already has an API key")
