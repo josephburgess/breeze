@@ -37,12 +37,32 @@ func NewUserStore(dbPath string) (*UserStore, error) {
 	}
 
 	if err := db.AutoMigrate(&models.User{}, &models.ApiCredential{}); err != nil {
-		logging.Error("Failed to migrate db", err)
-		return nil, err
+		logging.Error("Failed to migrate models", err)
+		return nil, fmt.Errorf("failed to migrate models: %w", err)
 	}
 
-	logging.Info("UserStore initialized with DB path: %s", dbPath)
+	if err := initializeExistingRecords(db); err != nil {
+		logging.Error("Failed to initialize existing records", err)
+		return nil, fmt.Errorf("failed to initialize existing records: %w", err)
+	}
+
 	return &UserStore{db: db}, nil
+}
+
+func initializeExistingRecords(db *gorm.DB) error {
+	var count int64
+	db.Model(&models.ApiCredential{}).Where("daily_reset_at IS NULL").Count(&count)
+
+	if count > 0 {
+		logging.Info("Updating daily_reset_at for existing records")
+		if err := db.Model(&models.ApiCredential{}).
+			Where("daily_reset_at IS NULL").
+			Update("daily_reset_at", time.Now().UTC()).Error; err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 func (s *UserStore) Close() error {

@@ -2,6 +2,8 @@ package models
 
 import (
 	"time"
+
+	"gorm.io/gorm"
 )
 
 type User struct {
@@ -25,5 +27,12 @@ type ApiCredential struct {
 	User              User       `gorm:"foreignKey:GithubUserID;references:GithubID" json:"-"`
 	DailyRequestCount int        `gorm:"default:0"`
 	RateLimitPerDay   int        `gorm:"default:40"`
-	DailyResetAt      time.Time  `gorm:"not null;default:CURRENT_TIMESTAMP"`
+	DailyResetAt      time.Time  `gorm:"not null"`
+}
+
+func (a *ApiCredential) BeforeCreate(tx *gorm.DB) error {
+	if a.DailyResetAt.IsZero() {
+		a.DailyResetAt = time.Now().UTC()
+	}
+	return nil
 }
