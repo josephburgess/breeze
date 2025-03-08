@@ -119,13 +119,16 @@ func TestUserStore_ValidateAPIKey(t *testing.T) {
 	require.NoError(t, err)
 
 	t.Run("valid api key", func(t *testing.T) {
-		validatedUser, err := store.ValidateAPIKey(cred.ApiKey)
+		validatedUser, limit, used, resetTime, err := store.ValidateAPIKey(cred.ApiKey)
 		require.NoError(t, err)
 		assert.Equal(t, user.GithubID, validatedUser.GithubID)
+		assert.Greater(t, limit, 0)
+		assert.GreaterOrEqual(t, used, 1)
+		assert.False(t, resetTime.IsZero())
 	})
 
 	t.Run("invalid api key", func(t *testing.T) {
-		_, err := store.ValidateAPIKey("invalid_key")
+		_, _, _, _, err := store.ValidateAPIKey("invalid_key")
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "invalid API key")
 	})
@@ -139,7 +142,7 @@ func TestUserStore_ValidateAPIKey(t *testing.T) {
 			}).Error
 		require.NoError(t, err)
 
-		_, err = store.ValidateAPIKey(cred.ApiKey)
+		_, _, _, _, err = store.ValidateAPIKey(cred.ApiKey)
 		assert.Error(t, err)
 		var rateLimitErr *RateLimitError
 		assert.ErrorAs(t, err, &rateLimitErr)
@@ -155,9 +158,12 @@ func TestUserStore_ValidateAPIKey(t *testing.T) {
 			}).Error
 		require.NoError(t, err)
 
-		validatedUser, err := store.ValidateAPIKey(cred.ApiKey)
+		validatedUser, limit, used, resetTime, err := store.ValidateAPIKey(cred.ApiKey)
 		require.NoError(t, err)
 		assert.Equal(t, user.GithubID, validatedUser.GithubID)
+		assert.Greater(t, limit, 0)
+		assert.Equal(t, 1, used)
+		assert.False(t, resetTime.IsZero())
 
 		var updatedCred models.ApiCredential
 		err = store.db.Where("api_key = ?", cred.ApiKey).First(&updatedCred).Error
@@ -176,7 +182,7 @@ func TestUserStore_ValidateAPIKey(t *testing.T) {
 
 		numRequests := 3
 		for i := 0; i < numRequests; i++ {
-			_, err := store.ValidateAPIKey(cred.ApiKey)
+			_, _, _, _, err := store.ValidateAPIKey(cred.ApiKey)
 			require.NoError(t, err)
 		}
 
