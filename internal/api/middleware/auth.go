@@ -27,12 +27,18 @@ func ApiKeyAuth(userStore *store.UserStore) func(http.Handler) http.Handler {
 				return
 			}
 
-			user, err := userStore.ValidateAPIKey(apiKey)
+			user, dailyLimit, dailyUsed, resetTime, err := userStore.ValidateAPIKey(apiKey)
+
+			if dailyLimit > 0 {
+				remaining := max(dailyLimit-dailyUsed, 0)
+
+				w.Header().Set("X-RateLimit-Limit", fmt.Sprintf("%d", dailyLimit))
+				w.Header().Set("X-RateLimit-Remaining", fmt.Sprintf("%d", remaining))
+				w.Header().Set("X-RateLimit-Reset", resetTime.Format(time.RFC3339))
+			}
+
 			if err != nil {
 				if rateLimitErr, ok := err.(*store.RateLimitError); ok {
-					w.Header().Set("X-RateLimit-Limit", fmt.Sprintf("%d", rateLimitErr.RateLimit))
-					w.Header().Set("X-RateLimit-Remaining", fmt.Sprintf("%d", rateLimitErr.Remaining))
-					w.Header().Set("X-RateLimit-Reset", rateLimitErr.ResetTime.Format(time.RFC3339))
 					http.Error(w, rateLimitErr.Message, http.StatusTooManyRequests)
 					return
 				}
