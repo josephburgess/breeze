@@ -24,8 +24,12 @@ func NewClient(apiKey string) *Client {
 	}
 }
 
-func (c *Client) GetCoordinates(city string) (*models.City, error) {
-	url := fmt.Sprintf("%sgeo/1.0/direct?q=%s&limit=1&appid=%s", c.BaseURL, city, c.ApiKey)
+func (c *Client) GetCoordinates(city string, customApiKey string) (*models.City, error) {
+	apiKey := c.ApiKey
+	if customApiKey != "" {
+		apiKey = customApiKey
+	}
+	url := fmt.Sprintf("%sgeo/1.0/direct?q=%s&limit=1&appid=%s", c.BaseURL, city, apiKey)
 	logging.Info("Fetching coordinates for city: %s", city)
 
 	resp, err := http.Get(url)
@@ -50,12 +54,15 @@ func (c *Client) GetCoordinates(city string) (*models.City, error) {
 	return &cities[0], nil
 }
 
-func (c *Client) GetWeather(lat, lon float64, units string) (*models.OneCallResponse, error) {
+func (c *Client) GetWeather(lat, lon float64, units string, customApiKey string) (*models.OneCallResponse, error) {
 	var url string
-
+	apiKey := c.ApiKey
+	if customApiKey != "" {
+		apiKey = customApiKey
+	}
 	if units != "" {
 		url = fmt.Sprintf("%sdata/3.0/onecall?lat=%f&lon=%f&appid=%s&units=%s",
-			c.BaseURL, lat, lon, c.ApiKey, units)
+			c.BaseURL, lat, lon, apiKey, units)
 		logging.Info("Fetching weather data with units=%s", units)
 	} else {
 		url = fmt.Sprintf("%sdata/3.0/onecall?lat=%f&lon=%f&appid=%s",
