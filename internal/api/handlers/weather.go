@@ -3,6 +3,7 @@ package handlers
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
 
 	"github.com/gorilla/mux"
 	"github.com/josephburgess/breeze/internal/api/middleware"
@@ -25,7 +26,6 @@ func (h *WeatherHandler) GetWeather(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	cityName := vars["city"]
 	units := r.URL.Query().Get("units")
-
 	var customApiKey string
 	if key, ok := r.Context().Value(middleware.CustomApiContextKey).(string); ok {
 		customApiKey = key
@@ -39,6 +39,12 @@ func (h *WeatherHandler) GetWeather(w http.ResponseWriter, r *http.Request) {
 
 	city, err := h.weatherClient.GetCoordinates(cityName, customApiKey)
 	if err != nil {
+		if strings.Contains(err.Error(), "invalid_api_key") {
+			logging.Error("Invalid API key provided", err)
+			http.Error(w, "Invalid API key", http.StatusUnauthorized)
+			return
+		}
+
 		logging.Error("Error finding city", err)
 		http.Error(w, "Error finding city", http.StatusNotFound)
 		return

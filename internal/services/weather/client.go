@@ -29,6 +29,7 @@ func (c *Client) GetCoordinates(city string, customApiKey string) (*models.City,
 	if customApiKey != "" {
 		apiKey = customApiKey
 	}
+
 	url := fmt.Sprintf("%sgeo/1.0/direct?q=%s&limit=1&appid=%s", c.BaseURL, city, apiKey)
 	logging.Info("Fetching coordinates for city: %s", city)
 
@@ -38,6 +39,18 @@ func (c *Client) GetCoordinates(city string, customApiKey string) (*models.City,
 		return nil, fmt.Errorf("HTTP request failed: %w", err)
 	}
 	defer resp.Body.Close()
+
+	if resp.StatusCode == 401 {
+		logging.Error("Invalid API key", nil)
+		return nil, fmt.Errorf("invalid_api_key: custom api key is not valid - please run setup again or set with flag -K")
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		bodyStr := string(body)
+		logging.Error("API error", fmt.Errorf("status %d: %s", resp.StatusCode, bodyStr))
+		return nil, fmt.Errorf("API error (%d): %s", resp.StatusCode, bodyStr)
+	}
 
 	var cities []models.City
 	if err := json.NewDecoder(resp.Body).Decode(&cities); err != nil {
