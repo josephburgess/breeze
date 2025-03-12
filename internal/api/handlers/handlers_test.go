@@ -17,8 +17,8 @@ import (
 )
 
 type WeatherClientInterface interface {
-	GetCoordinates(city string) (*models.City, error)
-	GetWeather(lat, lon float64, units string) (*models.OneCallResponse, error)
+	GetCoordinates(city string, customApiKey string) (*models.City, error)
+	GetWeather(lat, lon float64, units string, customApiKey string) (*models.OneCallResponse, error)
 	SearchCities(query string, limit int) ([]models.City, error)
 }
 
@@ -26,12 +26,12 @@ type MockWeatherClient struct {
 	mock.Mock
 }
 
-func (m *MockWeatherClient) GetCoordinates(city string) (*models.City, error) {
+func (m *MockWeatherClient) GetCoordinates(city string, customApiKey string) (*models.City, error) {
 	args := m.Called(city)
 	return args.Get(0).(*models.City), args.Error(1)
 }
 
-func (m *MockWeatherClient) GetWeather(lat, lon float64, units string) (*models.OneCallResponse, error) {
+func (m *MockWeatherClient) GetWeather(lat, lon float64, units string, customApiKey string) (*models.OneCallResponse, error) {
 	args := m.Called(lat, lon, units)
 	return args.Get(0).(*models.OneCallResponse), args.Error(1)
 }
@@ -112,18 +112,19 @@ func (m *MockGitHubOAuth) GetUserInfo(token string) (*models.User, error) {
 func TestWeatherHandler_GetWeather(t *testing.T) {
 	mockClient := new(MockWeatherClient)
 
+	var apiKey string
 	getWeatherHandler := func(w http.ResponseWriter, r *http.Request) {
 		vars := mux.Vars(r)
 		cityName := vars["city"]
 		units := r.URL.Query().Get("units")
 
-		city, err := mockClient.GetCoordinates(cityName)
+		city, err := mockClient.GetCoordinates(cityName, apiKey)
 		if err != nil {
 			http.Error(w, "Error finding city", http.StatusNotFound)
 			return
 		}
 
-		weather, err := mockClient.GetWeather(city.Lat, city.Lon, units)
+		weather, err := mockClient.GetWeather(city.Lat, city.Lon, units, apiKey)
 		if err != nil {
 			http.Error(w, "Error getting weather", http.StatusInternalServerError)
 			return

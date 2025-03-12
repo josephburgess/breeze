@@ -12,6 +12,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+var apiKey string
+
 func TestClient_GetCoordinates(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, "/geo/1.0/direct", r.URL.Path)
@@ -36,7 +38,7 @@ func TestClient_GetCoordinates(t *testing.T) {
 
 	client.BaseURL = server.URL + "/"
 
-	city, err := client.GetCoordinates("London")
+	city, err := client.GetCoordinates("London", apiKey)
 
 	require.NoError(t, err)
 	require.NotNil(t, city)
@@ -57,7 +59,7 @@ func TestClient_GetCoordinates_NotFound(t *testing.T) {
 	client := weather.NewClient("test-api-key")
 	client.BaseURL = server.URL + "/"
 
-	city, err := client.GetCoordinates("NonExistentCity")
+	city, err := client.GetCoordinates("NonExistentCity", apiKey)
 
 	assert.Error(t, err)
 	assert.Nil(t, city)
@@ -106,7 +108,7 @@ func TestClient_GetWeather(t *testing.T) {
 	client := weather.NewClient("test-api-key")
 	client.BaseURL = server.URL + "/"
 
-	weather, err := client.GetWeather(51.5074, -0.1278, "metric")
+	weather, err := client.GetWeather(51.5074, -0.1278, "metric", apiKey)
 
 	require.NoError(t, err)
 	require.NotNil(t, weather)
@@ -140,7 +142,7 @@ func TestClient_GetWeather_DefaultUnits(t *testing.T) {
 	client := weather.NewClient("test-api-key")
 	client.BaseURL = server.URL + "/"
 
-	weather, err := client.GetWeather(51.5074, -0.1278, "")
+	weather, err := client.GetWeather(51.5074, -0.1278, "", apiKey)
 
 	require.NoError(t, err)
 	require.NotNil(t, weather)
