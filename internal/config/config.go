@@ -15,12 +15,11 @@ type Config struct {
 	GithubClientID     string
 	GithubClientSecret string
 	GithubRedirectURI  string
-	JWTSecret          string
 }
 
 func Load() (*Config, error) {
 	if err := godotenv.Load(); err != nil {
-		logging.Warn(".env file not found")
+		logging.Warn(".env file not found, using environment variables")
 	}
 
 	port := getEnv("PORT", "8080")
@@ -29,16 +28,12 @@ func Load() (*Config, error) {
 	githubClientID := getEnv("GITHUB_CLIENT_ID", "")
 	githubClientSecret := getEnv("GITHUB_CLIENT_SECRET", "")
 	githubRedirectURI := getEnv("GITHUB_REDIRECT_URI", "http://localhost:8080/api/auth/callback")
-	jwtSecret := getEnv("JWT_SECRET", "")
 
 	if openWeatherAPIKey == "" {
 		return nil, fmt.Errorf("missing required environment variable: OPENWEATHER_API_KEY")
 	}
 	if githubClientID == "" || githubClientSecret == "" {
 		return nil, fmt.Errorf("missing required environment variables: GITHUB_CLIENT_ID and/or GITHUB_CLIENT_SECRET")
-	}
-	if jwtSecret == "" {
-		return nil, fmt.Errorf("missing required environment variable: JWT_SECRET")
 	}
 
 	logging.Info("Configuration loaded successfully")
@@ -50,7 +45,6 @@ func Load() (*Config, error) {
 		GithubClientID:     githubClientID,
 		GithubClientSecret: githubClientSecret,
 		GithubRedirectURI:  githubRedirectURI,
-		JWTSecret:          jwtSecret,
 	}, nil
 }
 

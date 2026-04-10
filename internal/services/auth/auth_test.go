@@ -23,7 +23,8 @@ func TestGitHubOAuth_GetAuthURL(t *testing.T) {
 	assert.Contains(t, url, "redirect_uri=")
 	assert.Contains(t, url, "state="+state)
 	assert.Contains(t, url, "scope=user:email,public_repo")
-	assert.True(t, githubOAuth.States[state])
+	_, stateStored := githubOAuth.states.Load(state)
+	assert.True(t, stateStored)
 }
 
 func TestGitHubOAuth_ExchangeCodeForToken(t *testing.T) {
@@ -50,7 +51,7 @@ func TestGitHubOAuth_ExchangeCodeForToken(t *testing.T) {
 	githubOAuth := NewGitHubOAuth(clientID, clientSecret, redirectURI)
 
 	testState := "test-state"
-	githubOAuth.States[testState] = true
+	githubOAuth.states.Store(testState, true)
 }
 
 func TestGitHubOAuth_GetUserInfo(t *testing.T) {
@@ -80,12 +81,12 @@ func TestNewGitHubOAuth(t *testing.T) {
 	assert.Equal(t, clientID, oauth.ClientID)
 	assert.Equal(t, clientSecret, oauth.ClientSecret)
 	assert.Equal(t, redirectURI, oauth.RedirectURI)
-	assert.NotNil(t, oauth.States)
+	assert.NotNil(t, &oauth.states)
 
 	oauth = NewGitHubOAuth(clientID, clientSecret, "")
 
 	assert.Equal(t, clientID, oauth.ClientID)
 	assert.Equal(t, clientSecret, oauth.ClientSecret)
 	assert.Equal(t, "http://localhost:8080/api/auth/callback", oauth.RedirectURI)
-	assert.NotNil(t, oauth.States)
+	assert.NotNil(t, &oauth.states)
 }

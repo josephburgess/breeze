@@ -18,6 +18,12 @@ const (
 	coordsCacheTTL  = 1 * time.Hour
 )
 
+type InvalidAPIKeyError struct{}
+
+func (e *InvalidAPIKeyError) Error() string {
+	return "invalid API key — please run setup again or set with flag -K"
+}
+
 type weatherEntry struct {
 	data      *models.OneCallResponse
 	expiresAt time.Time
@@ -72,8 +78,7 @@ func (c *Client) GetCoordinates(city string, customApiKey string) (*models.City,
 	defer resp.Body.Close()
 
 	if resp.StatusCode == 401 {
-		logging.Error("Invalid API key", nil)
-		return nil, fmt.Errorf("invalid_api_key: custom api key is not valid - please run setup again or set with flag -K")
+		return nil, &InvalidAPIKeyError{}
 	}
 
 	if resp.StatusCode != http.StatusOK {

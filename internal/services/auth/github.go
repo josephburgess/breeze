@@ -1,14 +1,16 @@
 package auth
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
+	"sync"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/josephburgess/breeze/internal/logging"
 	"github.com/josephburgess/breeze/internal/models"
 )
@@ -19,7 +21,7 @@ type GitHubOAuth struct {
 	ClientID     string
 	ClientSecret string
 	RedirectURI  string
-	States       map[string]bool
+	states       sync.Map
 }
 
 func NewGitHubOAuth(clientID, clientSecret, redirectURI string) *GitHubOAuth {
@@ -31,13 +33,12 @@ func NewGitHubOAuth(clientID, clientSecret, redirectURI string) *GitHubOAuth {
 		ClientID:     clientID,
 		ClientSecret: clientSecret,
 		RedirectURI:  redirectURI,
-		States:       make(map[string]bool),
 	}
 }
 
 func (g *GitHubOAuth) GetAuthURL() (string, string) {
-	state := uuid.New().String()
-	g.States[state] = true
+	state := generateToken()
+	g.states.Store(state, true)
 
 	authURL := fmt.Sprintf(
 		"https://github.com/login/oauth/authorize?client_id=%s&redirect_uri=%s&state=%s&scope=user:email,public_repo",
@@ -50,13 +51,12 @@ func (g *GitHubOAuth) GetAuthURL() (string, string) {
 }
 
 func (g *GitHubOAuth) ExchangeCodeForToken(code, state string) (string, error) {
-	if state != "" && !g.States[state] {
-		logging.Warn("Invalid state parameter received: %s", state)
-		return "", fmt.Errorf("invalid state parameter")
+	if state == "" {
+		return "", fmt.Errorf("state parameter is required")
 	}
-
-	if state != "" {
-		delete(g.States, state)
+	if _, loaded := g.states.LoadAndDelete(state); !loaded {
+		logging.Warn("Invalid or expired state parameter: %s", state)
+		return "", fmt.Errorf("invalid or expired state parameter")
 	}
 
 	logging.Info("Exchanging code for token with GitHub")
@@ -142,4 +142,10 @@ func (g *GitHubOAuth) GetUserInfo(token string) (*models.User, error) {
 
 	logging.Info("Successfully retrieved GitHub user: %s (ID: %d)", user.Login, user.GithubID)
 	return user, nil
+}
+
+func generateToken() string {
+	b := make([]byte, 16)
+	rand.Read(b)
+	return hex.EncodeToString(b)
 }

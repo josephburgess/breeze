@@ -2,8 +2,8 @@ package handlers
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
-	"strings"
 
 	"github.com/josephburgess/breeze/internal/api/middleware"
 	"github.com/josephburgess/breeze/internal/logging"
@@ -37,7 +37,8 @@ func (h *WeatherHandler) GetWeather(w http.ResponseWriter, r *http.Request) {
 
 	city, err := h.weatherClient.GetCoordinates(cityName, customApiKey)
 	if err != nil {
-		if strings.Contains(err.Error(), "invalid_api_key") {
+		var invalidKey *weather.InvalidAPIKeyError
+		if errors.As(err, &invalidKey) {
 			logging.Error("Invalid API key provided", err)
 			http.Error(w, "Invalid API key", http.StatusUnauthorized)
 			return

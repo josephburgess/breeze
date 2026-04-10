@@ -1,6 +1,8 @@
 package store
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"os"
@@ -11,7 +13,6 @@ import (
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 
-	"github.com/google/uuid"
 	"github.com/josephburgess/breeze/internal/logging"
 	"github.com/josephburgess/breeze/internal/models"
 )
@@ -68,7 +69,8 @@ func initializeExistingRecords(db *gorm.DB) error {
 func (s *UserStore) Close() error {
 	sqlDB, err := s.db.DB()
 	if err != nil {
-		logging.Warn("Failed closing db", err)
+		logging.Error("Failed to get underlying DB for close", err)
+		return err
 	}
 	return sqlDB.Close()
 }
@@ -109,16 +111,6 @@ func (s *UserStore) GetUser(githubID int64) (*models.User, error) {
 }
 
 func (s *UserStore) GetOrCreateAPICredential(githubUserID int64) (*models.ApiCredential, error) {
-	var count int64
-	if err := s.db.Model(&models.User{}).Where("github_id = ?", githubUserID).Count(&count).Error; err != nil {
-		logging.Error("db error while checking for user", err)
-		return nil, err
-	}
-	if count == 0 {
-		logging.Warn("user with ID %d not found", githubUserID)
-		return nil, fmt.Errorf("user with ID %d not found", githubUserID)
-	}
-
 	var credential models.ApiCredential
 	err := s.db.Where("github_user_id = ?", githubUserID).First(&credential).Error
 
@@ -141,14 +133,14 @@ func (s *UserStore) GetOrCreateAPICredential(githubUserID int64) (*models.ApiCre
 }
 
 func (s *UserStore) CreateAPICredential(githubUserID int64) (*models.ApiCredential, error) {
-	var count int64
-	if err := s.db.Model(&models.User{}).Where("github_id = ?", githubUserID).Count(&count).Error; err != nil {
-		logging.Error("db error while checking for user", err)
+	var user models.User
+	if err := s.db.Where("github_id = ?", githubUserID).First(&user).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			logging.Warn("user with ID %d not found", githubUserID)
+			return nil, fmt.Errorf("user with ID %d not found", githubUserID)
+		}
+		logging.Error("db error while fetching user", err)
 		return nil, err
-	}
-	if count == 0 {
-		logging.Warn("user with ID %d not found", githubUserID)
-		return nil, fmt.Errorf("user with ID %d not found", githubUserID)
 	}
 
 	apiKey := generateAPIKey()
@@ -264,7 +256,7 @@ func (s *UserStore) GetAPIKeyQuota(apiKey string) (limit, used int, resetAt time
 }
 
 func generateAPIKey() string {
-	apiKey := fmt.Sprintf("gust_%s", uuid.New().String())
-	logging.Info("Generated API key: %s", apiKey)
-	return apiKey
+	b := make([]byte, 16)
+	rand.Read(b)
+	return fmt.Sprintf("gust_%s", hex.EncodeToString(b))
 }

@@ -1,27 +1,29 @@
 package logging
 
 import (
-	"go.uber.org/zap"
+	"fmt"
+	"log/slog"
+	"os"
 )
 
-var Logger *zap.SugaredLogger
-
-func init() {
-	logger, _ := zap.NewDevelopment()
-	defer logger.Sync()
-	sugar := logger.Sugar()
-
-	Logger = sugar.WithOptions(zap.AddCallerSkip(1))
-}
+var logger = slog.New(slog.NewTextHandler(os.Stderr, nil))
 
 func Error(msg string, err error) {
-	Logger.Errorw(msg, "error", err)
+	logger.Error(msg, "error", err)
 }
 
 func Info(msg string, args ...any) {
-	Logger.Infof(msg, args...)
+	if len(args) == 0 {
+		logger.Info(msg)
+		return
+	}
+	logger.Info(fmt.Sprintf(msg, args...))
 }
 
 func Warn(msg string, args ...any) {
-	Logger.Warnf(msg, args...)
+	if len(args) == 0 {
+		logger.Warn(msg)
+		return
+	}
+	logger.Warn(fmt.Sprintf(msg, args...))
 }
