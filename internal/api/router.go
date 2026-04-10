@@ -14,7 +14,7 @@ func NewRouter(weatherClient *weather.Client, userStore *store.UserStore, github
 	mux := http.NewServeMux()
 
 	authHandler := handlers.NewAuthHandler(githubOAuth, userStore)
-	userHandler := handlers.NewUserHandler()
+	userHandler := handlers.NewUserHandler(userStore)
 	weatherHandler := handlers.NewWeatherHandler(weatherClient)
 
 	// public routes
@@ -26,6 +26,7 @@ func NewRouter(weatherClient *weather.Client, userStore *store.UserStore, github
 	// authenticated routes
 	authed := middleware.ApiKeyAuth(userStore)
 	mux.Handle("GET /api/user", authed(http.HandlerFunc(userHandler.GetUser)))
+	mux.Handle("GET /api/user/quota", authed(http.HandlerFunc(userHandler.GetQuota)))
 	mux.Handle("GET /api/weather/{city}", authed(http.HandlerFunc(weatherHandler.GetWeather)))
 
 	return mux

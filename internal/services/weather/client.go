@@ -6,14 +6,33 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"sync"
+	"time"
 
 	"github.com/josephburgess/breeze/internal/logging"
 	"github.com/josephburgess/breeze/internal/models"
 )
 
+const (
+	weatherCacheTTL = 10 * time.Minute
+	coordsCacheTTL  = 1 * time.Hour
+)
+
+type weatherEntry struct {
+	data      *models.OneCallResponse
+	expiresAt time.Time
+}
+
+type coordsEntry struct {
+	data      *models.City
+	expiresAt time.Time
+}
+
 type Client struct {
-	ApiKey  string
-	BaseURL string
+	ApiKey       string
+	BaseURL      string
+	weatherCache sync.Map
+	coordsCache  sync.Map
 }
 
 func NewClient(apiKey string) *Client {
@@ -30,10 +49,20 @@ func (c *Client) GetCoordinates(city string, customApiKey string) (*models.City,
 		apiKey = customApiKey
 	}
 
-	url := fmt.Sprintf("%sgeo/1.0/direct?q=%s&limit=1&appid=%s", c.BaseURL, city, apiKey)
+	cacheKey := fmt.Sprintf("%s:%s", city, apiKey)
+	if v, ok := c.coordsCache.Load(cacheKey); ok {
+		entry := v.(coordsEntry)
+		if time.Now().Before(entry.expiresAt) {
+			logging.Info("Cache hit for city coordinates: %s", city)
+			return entry.data, nil
+		}
+		c.coordsCache.Delete(cacheKey)
+	}
+
+	reqURL := fmt.Sprintf("%sgeo/1.0/direct?q=%s&limit=1&appid=%s", c.BaseURL, url.QueryEscape(city), apiKey)
 	logging.Info("Fetching coordinates for city: %s", city)
 
-	resp, err := http.Get(url)
+	resp, err := http.Get(reqURL)
 	if err != nil {
 		logging.Error("HTTP request failed", err)
 		return nil, fmt.Errorf("HTTP request failed: %w", err)
@@ -47,9 +76,8 @@ func (c *Client) GetCoordinates(city string, customApiKey string) (*models.City,
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
-		bodyStr := string(body)
-		logging.Error("API error", fmt.Errorf("status %d: %s", resp.StatusCode, bodyStr))
-		return nil, fmt.Errorf("API error (%d): %s", resp.StatusCode, bodyStr)
+		logging.Error("API error", fmt.Errorf("status %d: %s", resp.StatusCode, string(body)))
+		return nil, fmt.Errorf("API error (%d): %s", resp.StatusCode, string(body))
 	}
 
 	var cities []models.City
@@ -64,28 +92,45 @@ func (c *Client) GetCoordinates(city string, customApiKey string) (*models.City,
 	}
 
 	logging.Info("Coordinates found for city: %s (lat: %f, lon: %f)", city, cities[0].Lat, cities[0].Lon)
+
+	c.coordsCache.Store(cacheKey, coordsEntry{
+		data:      &cities[0],
+		expiresAt: time.Now().Add(coordsCacheTTL),
+	})
+
 	return &cities[0], nil
 }
 
 func (c *Client) GetWeather(lat, lon float64, units string, customApiKey string) (*models.OneCallResponse, error) {
-	var url string
 	apiKey := c.ApiKey
 	if customApiKey != "" {
 		apiKey = customApiKey
 	}
+
+	cacheKey := fmt.Sprintf("%.4f,%.4f,%s", lat, lon, units)
+	if v, ok := c.weatherCache.Load(cacheKey); ok {
+		entry := v.(weatherEntry)
+		if time.Now().Before(entry.expiresAt) {
+			logging.Info("Cache hit for weather: %s", cacheKey)
+			return entry.data, nil
+		}
+		c.weatherCache.Delete(cacheKey)
+	}
+
+	var reqURL string
 	if units != "" {
-		url = fmt.Sprintf("%sdata/3.0/onecall?lat=%f&lon=%f&appid=%s&units=%s",
+		reqURL = fmt.Sprintf("%sdata/3.0/onecall?lat=%f&lon=%f&appid=%s&units=%s",
 			c.BaseURL, lat, lon, apiKey, units)
 		logging.Info("Fetching weather data with units=%s", units)
 	} else {
-		url = fmt.Sprintf("%sdata/3.0/onecall?lat=%f&lon=%f&appid=%s",
-			c.BaseURL, lat, lon, c.ApiKey)
+		reqURL = fmt.Sprintf("%sdata/3.0/onecall?lat=%f&lon=%f&appid=%s",
+			c.BaseURL, lat, lon, apiKey)
 		logging.Info("Fetching weather data with default units (Kelvin)")
 	}
 
 	logging.Info("Fetching weather data for lat: %f, lon: %f", lat, lon)
 
-	resp, err := http.Get(url)
+	resp, err := http.Get(reqURL)
 	if err != nil {
 		logging.Error("HTTP request failed", err)
 		return nil, fmt.Errorf("HTTP request failed: %w", err)
@@ -104,14 +149,20 @@ func (c *Client) GetWeather(lat, lon float64, units string, customApiKey string)
 	}
 
 	logging.Info("Successfully fetched weather data for lat: %f, lon: %f", lat, lon)
+
+	c.weatherCache.Store(cacheKey, weatherEntry{
+		data:      &result,
+		expiresAt: time.Now().Add(weatherCacheTTL),
+	})
+
 	return &result, nil
 }
 
 func (c *Client) SearchCities(query string, limit int) ([]models.City, error) {
-	escapedQuery := url.QueryEscape(query)
-	url := fmt.Sprintf("%sgeo/1.0/direct?q=%s&limit=%d&appid=%s", c.BaseURL, escapedQuery, limit, c.ApiKey)
+	reqURL := fmt.Sprintf("%sgeo/1.0/direct?q=%s&limit=%d&appid=%s",
+		c.BaseURL, url.QueryEscape(query), limit, c.ApiKey)
 
-	resp, err := http.Get(url)
+	resp, err := http.Get(reqURL)
 	if err != nil {
 		logging.Error("HTTP request failed", err)
 		return nil, fmt.Errorf("HTTP request failed: %w", err)
@@ -119,19 +170,12 @@ func (c *Client) SearchCities(query string, limit int) ([]models.City, error) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		data, _ := io.ReadAll(resp.Body)
-		body := string(data)
-		return nil, fmt.Errorf("API returned status %d %s", resp.StatusCode, body)
-	}
-
-	data, err := io.ReadAll(resp.Body)
-	if err != nil {
-		logging.Error("Failed to read response body", err)
-		return nil, fmt.Errorf("failed to read response body: %w", err)
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("API returned status %d: %s", resp.StatusCode, string(body))
 	}
 
 	var cities []models.City
-	if err := json.Unmarshal(data, &cities); err != nil {
+	if err := json.NewDecoder(resp.Body).Decode(&cities); err != nil {
 		logging.Error("Failed to decode JSON response", err)
 		return nil, fmt.Errorf("unmarshaling JSON: %w", err)
 	}

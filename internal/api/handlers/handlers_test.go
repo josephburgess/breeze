@@ -194,7 +194,7 @@ func TestWeatherHandler_GetWeather(t *testing.T) {
 }
 
 func TestUserHandler_GetUser(t *testing.T) {
-	handler := handlers.NewUserHandler()
+	handler := handlers.NewUserHandler(nil)
 
 	testUser := &models.User{
 		ID:       1,

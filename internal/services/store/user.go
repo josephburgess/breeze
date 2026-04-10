@@ -186,7 +186,7 @@ func (s *UserStore) ValidateAPIKey(apiKey string) (*models.User, int, int, time.
 	}
 
 	now := time.Now().UTC()
-	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
+	today := now.Truncate(24 * time.Hour)
 
 	resetTime := today.Add(24 * time.Hour)
 	if !credential.DailyResetAt.IsZero() {
@@ -236,6 +236,31 @@ type RateLimitError struct {
 
 func (e *RateLimitError) Error() string {
 	return e.Message
+}
+
+func (s *UserStore) GetAPIKeyQuota(apiKey string) (limit, used int, resetAt time.Time, err error) {
+	var credential models.ApiCredential
+	if err := s.db.Where("api_key = ?", apiKey).First(&credential).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return 0, 0, time.Time{}, fmt.Errorf("invalid API key")
+		}
+		return 0, 0, time.Time{}, err
+	}
+
+	now := time.Now().UTC()
+	today := now.Truncate(24 * time.Hour)
+
+	dailyUsed := credential.DailyRequestCount
+	if credential.DailyResetAt.IsZero() || credential.DailyResetAt.Before(today) {
+		dailyUsed = 0
+	}
+
+	resetAt = today.Add(24 * time.Hour)
+	if !credential.DailyResetAt.IsZero() {
+		resetAt = credential.DailyResetAt.Add(24 * time.Hour)
+	}
+
+	return credential.RateLimitPerDay, dailyUsed, resetAt, nil
 }
 
 func generateAPIKey() string {

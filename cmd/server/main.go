@@ -2,6 +2,7 @@ package main
 
 import (
 	"net/http"
+	"os"
 
 	"github.com/josephburgess/breeze/internal/api"
 	"github.com/josephburgess/breeze/internal/config"
@@ -12,7 +13,11 @@ import (
 )
 
 func main() {
-	cfg := config.Load()
+	cfg, err := config.Load()
+	if err != nil {
+		logging.Error("Configuration error", err)
+		os.Exit(1)
+	}
 
 	weatherClient := weather.NewClient(cfg.OpenWeatherAPIKey)
 

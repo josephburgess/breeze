@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"os"
 
 	"github.com/joho/godotenv"
@@ -17,7 +18,7 @@ type Config struct {
 	JWTSecret          string
 }
 
-func Load() *Config {
+func Load() (*Config, error) {
 	if err := godotenv.Load(); err != nil {
 		logging.Warn(".env file not found")
 	}
@@ -31,18 +32,13 @@ func Load() *Config {
 	jwtSecret := getEnv("JWT_SECRET", "")
 
 	if openWeatherAPIKey == "" {
-		logging.Error("Missing required environment variable: OPENWEATHER_API_KEY", nil)
-		os.Exit(1)
+		return nil, fmt.Errorf("missing required environment variable: OPENWEATHER_API_KEY")
 	}
-
 	if githubClientID == "" || githubClientSecret == "" {
-		logging.Error("Missing required environment variables: GITHUB_CLIENT_ID and/or GITHUB_CLIENT_SECRET", nil)
-		os.Exit(1)
+		return nil, fmt.Errorf("missing required environment variables: GITHUB_CLIENT_ID and/or GITHUB_CLIENT_SECRET")
 	}
-
 	if jwtSecret == "" {
-		logging.Error("Missing required environment variable: JWT_SECRET", nil)
-		os.Exit(1)
+		return nil, fmt.Errorf("missing required environment variable: JWT_SECRET")
 	}
 
 	logging.Info("Configuration loaded successfully")
@@ -55,7 +51,7 @@ func Load() *Config {
 		GithubClientSecret: githubClientSecret,
 		GithubRedirectURI:  githubRedirectURI,
 		JWTSecret:          jwtSecret,
-	}
+	}, nil
 }
 
 func getEnv(key, fallback string) string {
