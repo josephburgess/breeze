@@ -6,11 +6,14 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/josephburgess/breeze/internal/logging"
 	"github.com/josephburgess/breeze/internal/models"
 )
+
+var githubHTTPClient = &http.Client{Timeout: 15 * time.Second}
 
 type GitHubOAuth struct {
 	ClientID     string
@@ -58,7 +61,7 @@ func (g *GitHubOAuth) ExchangeCodeForToken(code, state string) (string, error) {
 
 	logging.Info("Exchanging code for token with GitHub")
 	tokenURL := "https://github.com/login/oauth/access_token"
-	resp, err := http.PostForm(tokenURL, url.Values{
+	resp, err := githubHTTPClient.PostForm(tokenURL, url.Values{
 		"client_id":     {g.ClientID},
 		"client_secret": {g.ClientSecret},
 		"code":          {code},
@@ -105,8 +108,7 @@ func (g *GitHubOAuth) GetUserInfo(token string) (*models.User, error) {
 	req.Header.Set("Authorization", fmt.Sprintf("token %s", token))
 	req.Header.Set("Accept", "application/json")
 
-	client := &http.Client{}
-	resp, err := client.Do(req)
+	resp, err := githubHTTPClient.Do(req)
 	if err != nil {
 		logging.Error("User info request failed", err)
 		return nil, fmt.Errorf("user info request failed: %w", err)

@@ -1,8 +1,12 @@
 package main
 
 import (
+	"context"
 	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
 	"github.com/josephburgess/breeze/internal/api"
 	"github.com/josephburgess/breeze/internal/config"
@@ -24,7 +28,7 @@ func main() {
 	userStore, err := store.NewUserStore(cfg.DBPath)
 	if err != nil {
 		logging.Error("Failed to initialize user store", err)
-		return
+		os.Exit(1)
 	}
 	defer userStore.Close()
 
@@ -36,6 +40,33 @@ func main() {
 
 	handler := logging.Middleware(api.NewRouter(weatherClient, userStore, githubOAuth))
 
-	logging.Info("Starting server on port %s", cfg.Port)
-	logging.Error("Server encountered an error", http.ListenAndServe(":"+cfg.Port, handler))
+	srv := &http.Server{
+		Addr:         ":" + cfg.Port,
+		Handler:      handler,
+		ReadTimeout:  30 * time.Second,
+		WriteTimeout: 30 * time.Second,
+		IdleTimeout:  120 * time.Second,
+	}
+
+	go func() {
+		logging.Info("Starting server on port %s", cfg.Port)
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			logging.Error("Server error", err)
+			os.Exit(1)
+		}
+	}()
+
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	<-quit
+
+	logging.Info("Shutting down server...")
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	if err := srv.Shutdown(ctx); err != nil {
+		logging.Error("Server forced to shutdown", err)
+	}
+
+	logging.Info("Server exited")
 }

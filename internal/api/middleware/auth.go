@@ -49,22 +49,26 @@ func ApiKeyAuth(userStore *store.UserStore) func(http.Handler) http.Handler {
 
 			user, dailyLimit, dailyUsed, resetTime, err := userStore.ValidateAPIKey(apiKey)
 
-			if dailyLimit > 0 {
-				remaining := max(dailyLimit-dailyUsed, 0)
-
-				w.Header().Set("X-RateLimit-Limit", fmt.Sprintf("%d", dailyLimit))
-				w.Header().Set("X-RateLimit-Remaining", fmt.Sprintf("%d", remaining))
-				w.Header().Set("X-RateLimit-Reset", resetTime.Format(time.RFC3339))
-			}
-
 			if err != nil {
 				if rateLimitErr, ok := err.(*store.RateLimitError); ok {
+					if dailyLimit > 0 {
+						w.Header().Set("X-RateLimit-Limit", fmt.Sprintf("%d", dailyLimit))
+						w.Header().Set("X-RateLimit-Remaining", "0")
+						w.Header().Set("X-RateLimit-Reset", resetTime.Format(time.RFC3339))
+					}
 					http.Error(w, rateLimitErr.Message, http.StatusTooManyRequests)
 					return
 				}
 				logging.Warn("Invalid API key attempted: %s", apiKey)
 				http.Error(w, "Invalid API key", http.StatusUnauthorized)
 				return
+			}
+
+			if dailyLimit > 0 {
+				remaining := max(dailyLimit-dailyUsed, 0)
+				w.Header().Set("X-RateLimit-Limit", fmt.Sprintf("%d", dailyLimit))
+				w.Header().Set("X-RateLimit-Remaining", fmt.Sprintf("%d", remaining))
+				w.Header().Set("X-RateLimit-Reset", resetTime.Format(time.RFC3339))
 			}
 
 			logging.Info("Authenticated user: %s", user.Login)

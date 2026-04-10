@@ -1,6 +1,7 @@
 package api
 
 import (
+	"encoding/json"
 	"net/http"
 
 	"github.com/josephburgess/breeze/internal/api/handlers"
@@ -16,6 +17,12 @@ func NewRouter(weatherClient *weather.Client, userStore *store.UserStore, github
 	authHandler := handlers.NewAuthHandler(githubOAuth, userStore)
 	userHandler := handlers.NewUserHandler(userStore)
 	weatherHandler := handlers.NewWeatherHandler(weatherClient)
+
+	// health check
+	mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+	})
 
 	// public routes
 	mux.HandleFunc("GET /api/auth/request", authHandler.RequestAuth)

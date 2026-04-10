@@ -31,6 +31,7 @@ type coordsEntry struct {
 type Client struct {
 	ApiKey       string
 	BaseURL      string
+	httpClient   *http.Client
 	weatherCache sync.Map
 	coordsCache  sync.Map
 }
@@ -38,8 +39,9 @@ type Client struct {
 func NewClient(apiKey string) *Client {
 	logging.Info("Initializing Weather Client")
 	return &Client{
-		ApiKey:  apiKey,
-		BaseURL: "https://api.openweathermap.org/",
+		ApiKey:     apiKey,
+		BaseURL:    "https://api.openweathermap.org/",
+		httpClient: &http.Client{Timeout: 15 * time.Second},
 	}
 }
 
@@ -62,7 +64,7 @@ func (c *Client) GetCoordinates(city string, customApiKey string) (*models.City,
 	reqURL := fmt.Sprintf("%sgeo/1.0/direct?q=%s&limit=1&appid=%s", c.BaseURL, url.QueryEscape(city), apiKey)
 	logging.Info("Fetching coordinates for city: %s", city)
 
-	resp, err := http.Get(reqURL)
+	resp, err := c.httpClient.Get(reqURL)
 	if err != nil {
 		logging.Error("HTTP request failed", err)
 		return nil, fmt.Errorf("HTTP request failed: %w", err)
@@ -130,7 +132,7 @@ func (c *Client) GetWeather(lat, lon float64, units string, customApiKey string)
 
 	logging.Info("Fetching weather data for lat: %f, lon: %f", lat, lon)
 
-	resp, err := http.Get(reqURL)
+	resp, err := c.httpClient.Get(reqURL)
 	if err != nil {
 		logging.Error("HTTP request failed", err)
 		return nil, fmt.Errorf("HTTP request failed: %w", err)
@@ -162,7 +164,7 @@ func (c *Client) SearchCities(query string, limit int) ([]models.City, error) {
 	reqURL := fmt.Sprintf("%sgeo/1.0/direct?q=%s&limit=%d&appid=%s",
 		c.BaseURL, url.QueryEscape(query), limit, c.ApiKey)
 
-	resp, err := http.Get(reqURL)
+	resp, err := c.httpClient.Get(reqURL)
 	if err != nil {
 		logging.Error("HTTP request failed", err)
 		return nil, fmt.Errorf("HTTP request failed: %w", err)
