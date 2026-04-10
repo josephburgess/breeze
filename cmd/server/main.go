@@ -29,9 +29,8 @@ func main() {
 		cfg.GithubRedirectURI,
 	)
 
-	router := api.NewRouter(weatherClient, userStore, githubOAuth)
-	router.Use(logging.Middleware)
+	handler := logging.Middleware(api.NewRouter(weatherClient, userStore, githubOAuth))
 
 	logging.Info("Starting server on port %s", cfg.Port)
-	logging.Error("Server encountered an error", http.ListenAndServe(":"+cfg.Port, router))
+	logging.Error("Server encountered an error", http.ListenAndServe(":"+cfg.Port, handler))
 }

@@ -1,7 +1,8 @@
 package api
 
 import (
-	"github.com/gorilla/mux"
+	"net/http"
+
 	"github.com/josephburgess/breeze/internal/api/handlers"
 	"github.com/josephburgess/breeze/internal/api/middleware"
 	"github.com/josephburgess/breeze/internal/services/auth"
@@ -9,25 +10,23 @@ import (
 	"github.com/josephburgess/breeze/internal/services/weather"
 )
 
-func NewRouter(weatherClient *weather.Client, userStore *store.UserStore, githubOAuth *auth.GitHubOAuth) *mux.Router {
-	router := mux.NewRouter()
+func NewRouter(weatherClient *weather.Client, userStore *store.UserStore, githubOAuth *auth.GitHubOAuth) http.Handler {
+	mux := http.NewServeMux()
 
-	// create handlers
 	authHandler := handlers.NewAuthHandler(githubOAuth, userStore)
 	userHandler := handlers.NewUserHandler()
 	weatherHandler := handlers.NewWeatherHandler(weatherClient)
 
-	// auth routes (public)
-	router.HandleFunc("/api/auth/request", authHandler.RequestAuth).Methods("GET")
-	router.HandleFunc("/api/auth/callback", authHandler.Callback).Methods("GET")
-	router.HandleFunc("/api/auth/exchange", authHandler.ExchangeToken).Methods("POST")
-	router.HandleFunc("/api/cities/search", weatherHandler.SearchCities).Methods("GET")
+	// public routes
+	mux.HandleFunc("GET /api/auth/request", authHandler.RequestAuth)
+	mux.HandleFunc("GET /api/auth/callback", authHandler.Callback)
+	mux.HandleFunc("POST /api/auth/exchange", authHandler.ExchangeToken)
+	mux.HandleFunc("GET /api/cities/search", weatherHandler.SearchCities)
 
-	// auth'ed routes (needs key)
-	apiRouter := router.PathPrefix("/api").Subrouter()
-	apiRouter.Use(middleware.ApiKeyAuth(userStore))
-	apiRouter.HandleFunc("/user", userHandler.GetUser).Methods("GET")
-	apiRouter.HandleFunc("/weather/{city}", weatherHandler.GetWeather).Methods("GET")
+	// authenticated routes
+	authed := middleware.ApiKeyAuth(userStore)
+	mux.Handle("GET /api/user", authed(http.HandlerFunc(userHandler.GetUser)))
+	mux.Handle("GET /api/weather/{city}", authed(http.HandlerFunc(weatherHandler.GetWeather)))
 
-	return router
+	return mux
 }

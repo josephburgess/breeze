@@ -7,7 +7,6 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/gorilla/mux"
 	"github.com/josephburgess/breeze/internal/api/handlers"
 	"github.com/josephburgess/breeze/internal/api/middleware"
 	"github.com/josephburgess/breeze/internal/models"
@@ -114,8 +113,7 @@ func TestWeatherHandler_GetWeather(t *testing.T) {
 
 	var apiKey string
 	getWeatherHandler := func(w http.ResponseWriter, r *http.Request) {
-		vars := mux.Vars(r)
-		cityName := vars["city"]
+		cityName := r.PathValue("city")
 		units := r.URL.Query().Get("units")
 
 		city, err := mockClient.GetCoordinates(cityName, apiKey)
@@ -170,12 +168,12 @@ func TestWeatherHandler_GetWeather(t *testing.T) {
 	req, err := http.NewRequest("GET", "/weather/London?units=metric", nil)
 	require.NoError(t, err)
 
-	router := mux.NewRouter()
-	router.HandleFunc("/weather/{city}", getWeatherHandler).Methods("GET")
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /weather/{city}", getWeatherHandler)
 
 	rr := httptest.NewRecorder()
 
-	router.ServeHTTP(rr, req)
+	mux.ServeHTTP(rr, req)
 
 	statusCode := rr.Code
 	responseBody := rr.Body.String()

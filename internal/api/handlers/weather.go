@@ -5,7 +5,6 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/gorilla/mux"
 	"github.com/josephburgess/breeze/internal/api/middleware"
 	"github.com/josephburgess/breeze/internal/logging"
 	"github.com/josephburgess/breeze/internal/models"
@@ -23,8 +22,7 @@ func NewWeatherHandler(weatherClient *weather.Client) *WeatherHandler {
 }
 
 func (h *WeatherHandler) GetWeather(w http.ResponseWriter, r *http.Request) {
-	vars := mux.Vars(r)
-	cityName := vars["city"]
+	cityName := r.PathValue("city")
 	units := r.URL.Query().Get("units")
 	var customApiKey string
 	if key, ok := r.Context().Value(middleware.CustomApiContextKey).(string); ok {
