@@ -193,6 +193,39 @@ func TestUserStore_ValidateAPIKey(t *testing.T) {
 	})
 }
 
+func TestUserStore_GetAPIKeyQuota(t *testing.T) {
+	store := setupTestDB(t)
+
+	user := &models.User{GithubID: 777, Login: "quotauser", Token: "tok"}
+	require.NoError(t, store.SaveUser(user))
+	cred, err := store.GetOrCreateAPICredential(user.GithubID)
+	require.NoError(t, err)
+
+	t.Run("returns quota for valid key", func(t *testing.T) {
+		limit, used, resetAt, err := store.GetAPIKeyQuota(cred.ApiKey)
+		require.NoError(t, err)
+		assert.Greater(t, limit, 0)
+		assert.GreaterOrEqual(t, used, 0)
+		assert.False(t, resetAt.IsZero())
+	})
+
+	t.Run("resets used count when period has expired", func(t *testing.T) {
+		yesterday := time.Now().UTC().Add(-25 * time.Hour)
+		require.NoError(t, store.db.Model(&models.ApiCredential{}).
+			Where("api_key = ?", cred.ApiKey).
+			Updates(map[string]any{"daily_request_count": 30, "daily_reset_at": yesterday}).Error)
+
+		_, used, _, err := store.GetAPIKeyQuota(cred.ApiKey)
+		require.NoError(t, err)
+		assert.Equal(t, 0, used)
+	})
+
+	t.Run("invalid key returns error", func(t *testing.T) {
+		_, _, _, err := store.GetAPIKeyQuota("gust_notakey")
+		assert.Error(t, err)
+	})
+}
+
 func TestUserStore_CreateAPICredential(t *testing.T) {
 	store := setupTestDB(t)
 

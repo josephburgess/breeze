@@ -11,11 +11,17 @@ import (
 	"github.com/josephburgess/breeze/internal/services/weather"
 )
 
-type WeatherHandler struct {
-	weatherClient *weather.Client
+type WeatherClient interface {
+	GetCoordinates(city string, customApiKey string) (*models.City, error)
+	GetWeather(lat, lon float64, units string, customApiKey string) (*models.OneCallResponse, error)
+	SearchCities(query string, limit int) ([]models.City, error)
 }
 
-func NewWeatherHandler(weatherClient *weather.Client) *WeatherHandler {
+type WeatherHandler struct {
+	weatherClient WeatherClient
+}
+
+func NewWeatherHandler(weatherClient WeatherClient) *WeatherHandler {
 	return &WeatherHandler{
 		weatherClient: weatherClient,
 	}
@@ -51,7 +57,7 @@ func (h *WeatherHandler) GetWeather(w http.ResponseWriter, r *http.Request) {
 
 	logging.Info("Found city: %s (Lat: %f, Lon: %f)", city.Name, city.Lat, city.Lon)
 
-	weather, err := h.weatherClient.GetWeather(city.Lat, city.Lon, units, customApiKey)
+	weatherData, err := h.weatherClient.GetWeather(city.Lat, city.Lon, units, customApiKey)
 	if err != nil {
 		logging.Error("Error getting weather", err)
 		http.Error(w, "Error getting weather", http.StatusInternalServerError)
@@ -62,7 +68,7 @@ func (h *WeatherHandler) GetWeather(w http.ResponseWriter, r *http.Request) {
 
 	response := models.WeatherResponse{
 		City:    city,
-		Weather: weather,
+		Weather: weatherData,
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -76,11 +82,9 @@ func (h *WeatherHandler) SearchCities(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	limit := 5
-
 	logging.Info("Searching cities for query: %s", query)
 
-	cities, err := h.weatherClient.SearchCities(query, limit)
+	cities, err := h.weatherClient.SearchCities(query, 5)
 	if err != nil {
 		logging.Error("Error searching cities", err)
 		http.Error(w, "Error searching cities", http.StatusInternalServerError)

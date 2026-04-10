@@ -19,7 +19,11 @@ const (
 	CustomApiContextKey contextKey = "custom-api-user"
 )
 
-func ApiKeyAuth(userStore *store.UserStore) func(http.Handler) http.Handler {
+type APIKeyValidator interface {
+	ValidateAPIKey(apiKey string) (*models.User, int, int, time.Time, error)
+}
+
+func ApiKeyAuth(userStore APIKeyValidator) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			apiKey := r.URL.Query().Get("api_key")

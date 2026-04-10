@@ -15,7 +15,11 @@ import (
 	"github.com/josephburgess/breeze/internal/models"
 )
 
-var githubHTTPClient = &http.Client{Timeout: 15 * time.Second}
+var (
+	githubHTTPClient = &http.Client{Timeout: 15 * time.Second}
+	tokenURL         = "https://github.com/login/oauth/access_token"
+	userInfoURL      = "https://api.github.com/user"
+)
 
 type GitHubOAuth struct {
 	ClientID     string
@@ -36,6 +40,9 @@ func NewGitHubOAuth(clientID, clientSecret, redirectURI string) *GitHubOAuth {
 	}
 }
 
+func (g *GitHubOAuth) SetRedirectURI(uri string) { g.RedirectURI = uri }
+func (g *GitHubOAuth) GetRedirectURI() string    { return g.RedirectURI }
+
 func (g *GitHubOAuth) GetAuthURL() (string, string) {
 	state := generateToken()
 	g.states.Store(state, true)
@@ -50,6 +57,8 @@ func (g *GitHubOAuth) GetAuthURL() (string, string) {
 	return authURL, state
 }
 
+// ExchangeCodeForToken validates the OAuth state then exchanges the code for an access token.
+// Use this for the browser callback flow where a state was issued by GetAuthURL.
 func (g *GitHubOAuth) ExchangeCodeForToken(code, state string) (string, error) {
 	if state == "" {
 		return "", fmt.Errorf("state parameter is required")
@@ -58,9 +67,17 @@ func (g *GitHubOAuth) ExchangeCodeForToken(code, state string) (string, error) {
 		logging.Warn("Invalid or expired state parameter: %s", state)
 		return "", fmt.Errorf("invalid or expired state parameter")
 	}
+	return g.exchangeCode(code)
+}
 
+// ExchangeCodeDirect exchanges a code for a token without state validation.
+// Use this for the ExchangeToken endpoint where state was already consumed at the Callback step.
+func (g *GitHubOAuth) ExchangeCodeDirect(code string) (string, error) {
+	return g.exchangeCode(code)
+}
+
+func (g *GitHubOAuth) exchangeCode(code string) (string, error) {
 	logging.Info("Exchanging code for token with GitHub")
-	tokenURL := "https://github.com/login/oauth/access_token"
 	resp, err := githubHTTPClient.PostForm(tokenURL, url.Values{
 		"client_id":     {g.ClientID},
 		"client_secret": {g.ClientSecret},
@@ -99,7 +116,7 @@ func (g *GitHubOAuth) ExchangeCodeForToken(code, state string) (string, error) {
 }
 
 func (g *GitHubOAuth) GetUserInfo(token string) (*models.User, error) {
-	req, err := http.NewRequest("GET", "https://api.github.com/user", nil)
+	req, err := http.NewRequest("GET", userInfoURL, nil)
 	if err != nil {
 		logging.Error("Failed to create request for user info", err)
 		return nil, fmt.Errorf("failed to create request: %w", err)

@@ -9,14 +9,17 @@ import (
 	"github.com/josephburgess/breeze/internal/api/middleware"
 	"github.com/josephburgess/breeze/internal/logging"
 	"github.com/josephburgess/breeze/internal/models"
-	"github.com/josephburgess/breeze/internal/services/store"
 )
 
-type UserHandler struct {
-	userStore *store.UserStore
+type QuotaStore interface {
+	GetAPIKeyQuota(apiKey string) (limit, used int, resetAt time.Time, err error)
 }
 
-func NewUserHandler(userStore *store.UserStore) *UserHandler {
+type UserHandler struct {
+	userStore QuotaStore
+}
+
+func NewUserHandler(userStore QuotaStore) *UserHandler {
 	return &UserHandler{userStore: userStore}
 }
 

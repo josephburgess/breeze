@@ -3,272 +3,190 @@ package handlers_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/josephburgess/breeze/internal/api/handlers"
 	"github.com/josephburgess/breeze/internal/api/middleware"
 	"github.com/josephburgess/breeze/internal/models"
+	"github.com/josephburgess/breeze/internal/services/weather"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
 
-type WeatherClientInterface interface {
-	GetCoordinates(city string, customApiKey string) (*models.City, error)
-	GetWeather(lat, lon float64, units string, customApiKey string) (*models.OneCallResponse, error)
-	SearchCities(query string, limit int) ([]models.City, error)
-}
+// --- mocks ---
 
-type MockWeatherClient struct {
-	mock.Mock
-}
+type mockWeatherClient struct{ mock.Mock }
 
-func (m *MockWeatherClient) GetCoordinates(city string, customApiKey string) (*models.City, error) {
-	args := m.Called(city)
+func (m *mockWeatherClient) GetCoordinates(city, customKey string) (*models.City, error) {
+	args := m.Called(city, customKey)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
 	return args.Get(0).(*models.City), args.Error(1)
 }
-
-func (m *MockWeatherClient) GetWeather(lat, lon float64, units string, customApiKey string) (*models.OneCallResponse, error) {
-	args := m.Called(lat, lon, units)
+func (m *mockWeatherClient) GetWeather(lat, lon float64, units, customKey string) (*models.OneCallResponse, error) {
+	args := m.Called(lat, lon, units, customKey)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
 	return args.Get(0).(*models.OneCallResponse), args.Error(1)
 }
-
-func (m *MockWeatherClient) SearchCities(query string, limit int) ([]models.City, error) {
+func (m *mockWeatherClient) SearchCities(query string, limit int) ([]models.City, error) {
 	args := m.Called(query, limit)
 	return args.Get(0).([]models.City), args.Error(1)
 }
 
-type UserStoreInterface interface {
-	SaveUser(user *models.User) error
-	GetUser(githubID int64) (*models.User, error)
-	GetOrCreateAPICredential(githubUserID int64) (*models.ApiCredential, error)
-	ValidateAPIKey(apiKey string) (*models.User, error)
-	Close() error
-}
+type mockQuotaStore struct{ mock.Mock }
 
-type MockUserStore struct {
-	mock.Mock
-}
-
-func (m *MockUserStore) SaveUser(user *models.User) error {
-	args := m.Called(user)
-	return args.Error(0)
-}
-
-func (m *MockUserStore) GetUser(githubID int64) (*models.User, error) {
-	args := m.Called(githubID)
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
-	}
-	return args.Get(0).(*models.User), args.Error(1)
-}
-
-func (m *MockUserStore) GetOrCreateAPICredential(githubUserID int64) (*models.ApiCredential, error) {
-	args := m.Called(githubUserID)
-	return args.Get(0).(*models.ApiCredential), args.Error(1)
-}
-
-func (m *MockUserStore) ValidateAPIKey(apiKey string) (*models.User, error) {
+func (m *mockQuotaStore) GetAPIKeyQuota(apiKey string) (int, int, time.Time, error) {
 	args := m.Called(apiKey)
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
-	}
-	return args.Get(0).(*models.User), args.Error(1)
+	return args.Int(0), args.Int(1), args.Get(2).(time.Time), args.Error(3)
 }
 
-func (m *MockUserStore) Close() error {
-	args := m.Called()
-	return args.Error(0)
-}
+// --- WeatherHandler tests ---
 
-type GitHubOAuthInterface interface {
-	GetAuthURL() (string, string)
-	ExchangeCodeForToken(code, state string) (string, error)
-	GetUserInfo(token string) (*models.User, error)
-}
+func TestWeatherHandler_GetWeather_OK(t *testing.T) {
+	city := &models.City{Name: "London", Country: "GB", Lat: 51.5074, Lon: -0.1278}
+	weatherData := &models.OneCallResponse{Lat: 51.5074, Lon: -0.1278, Timezone: "Europe/London",
+		Current: models.CurrentWeather{Temp: 15.5}}
 
-type MockGitHubOAuth struct {
-	mock.Mock
-}
-
-func (m *MockGitHubOAuth) GetAuthURL() (string, string) {
-	args := m.Called()
-	return args.String(0), args.String(1)
-}
-
-func (m *MockGitHubOAuth) ExchangeCodeForToken(code, state string) (string, error) {
-	args := m.Called(code, state)
-	return args.String(0), args.Error(1)
-}
-
-func (m *MockGitHubOAuth) GetUserInfo(token string) (*models.User, error) {
-	args := m.Called(token)
-	return args.Get(0).(*models.User), args.Error(1)
-}
-
-func TestWeatherHandler_GetWeather(t *testing.T) {
-	mockClient := new(MockWeatherClient)
-
-	var apiKey string
-	getWeatherHandler := func(w http.ResponseWriter, r *http.Request) {
-		cityName := r.PathValue("city")
-		units := r.URL.Query().Get("units")
-
-		city, err := mockClient.GetCoordinates(cityName, apiKey)
-		if err != nil {
-			http.Error(w, "Error finding city", http.StatusNotFound)
-			return
-		}
-
-		weather, err := mockClient.GetWeather(city.Lat, city.Lon, units, apiKey)
-		if err != nil {
-			http.Error(w, "Error getting weather", http.StatusInternalServerError)
-			return
-		}
-
-		response := models.WeatherResponse{
-			City:    city,
-			Weather: weather,
-		}
-
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(response)
-	}
-
-	testCity := &models.City{
-		Name:    "London",
-		Country: "GB",
-		Lat:     51.5074,
-		Lon:     -0.1278,
-	}
-
-	testWeather := &models.OneCallResponse{
-		Lat:      51.5074,
-		Lon:      -0.1278,
-		Timezone: "Europe/London",
-		Current: models.CurrentWeather{
-			Temp:      15.5,
-			FeelsLike: 14.8,
-			Humidity:  70,
-			Weather: []models.WeatherCondition{
-				{
-					Main:        "Clouds",
-					Description: "scattered clouds",
-					Icon:        "03d",
-				},
-			},
-		},
-	}
-
-	mockClient.On("GetCoordinates", "London").Return(testCity, nil)
-	mockClient.On("GetWeather", testCity.Lat, testCity.Lon, "metric").Return(testWeather, nil)
-
-	req, err := http.NewRequest("GET", "/weather/London?units=metric", nil)
-	require.NoError(t, err)
+	mc := new(mockWeatherClient)
+	mc.On("GetCoordinates", "London", "").Return(city, nil)
+	mc.On("GetWeather", city.Lat, city.Lon, "metric", "").Return(weatherData, nil)
 
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /weather/{city}", getWeatherHandler)
+	mux.HandleFunc("GET /weather/{city}", handlers.NewWeatherHandler(mc).GetWeather)
 
+	req := httptest.NewRequest("GET", "/weather/London?units=metric", nil)
 	rr := httptest.NewRecorder()
-
 	mux.ServeHTTP(rr, req)
 
-	statusCode := rr.Code
-	responseBody := rr.Body.String()
-
-	t.Logf("Status Code: %d", statusCode)
-	t.Logf("Response Body: %s", responseBody)
-
-	assert.Equal(t, http.StatusOK, statusCode)
-
-	var response models.WeatherResponse
-	err = json.Unmarshal(rr.Body.Bytes(), &response)
-	require.NoError(t, err)
-
-	assert.Equal(t, testCity.Name, response.City.Name)
-	assert.Equal(t, testWeather.Current.Temp, response.Weather.Current.Temp)
-
-	mockClient.AssertExpectations(t)
+	require.Equal(t, http.StatusOK, rr.Code)
+	var resp models.WeatherResponse
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &resp))
+	assert.Equal(t, "London", resp.City.Name)
+	assert.Equal(t, 15.5, resp.Weather.Current.Temp)
+	mc.AssertExpectations(t)
 }
 
-func TestUserHandler_GetUser(t *testing.T) {
+func TestWeatherHandler_GetWeather_CityNotFound(t *testing.T) {
+	mc := new(mockWeatherClient)
+	mc.On("GetCoordinates", "Nowhere", "").Return(nil, errors.New("no coordinates found for Nowhere"))
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /weather/{city}", handlers.NewWeatherHandler(mc).GetWeather)
+
+	req := httptest.NewRequest("GET", "/weather/Nowhere", nil)
+	rr := httptest.NewRecorder()
+	mux.ServeHTTP(rr, req)
+
+	assert.Equal(t, http.StatusNotFound, rr.Code)
+	mc.AssertExpectations(t)
+}
+
+func TestWeatherHandler_GetWeather_InvalidAPIKey(t *testing.T) {
+	mc := new(mockWeatherClient)
+	mc.On("GetCoordinates", "London", "badkey").Return(nil, &weather.InvalidAPIKeyError{})
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /weather/{city}", handlers.NewWeatherHandler(mc).GetWeather)
+
+	req := httptest.NewRequest("GET", "/weather/London", nil)
+	ctx := context.WithValue(req.Context(), middleware.CustomApiContextKey, "badkey")
+	req = req.WithContext(ctx)
+	rr := httptest.NewRecorder()
+	mux.ServeHTTP(rr, req)
+
+	assert.Equal(t, http.StatusUnauthorized, rr.Code)
+	mc.AssertExpectations(t)
+}
+
+func TestWeatherHandler_SearchCities_OK(t *testing.T) {
+	cities := []models.City{{Name: "London", Country: "GB"}, {Name: "London", Country: "CA"}}
+
+	mc := new(mockWeatherClient)
+	mc.On("SearchCities", "lon", 5).Return(cities, nil)
+
+	req := httptest.NewRequest("GET", "/cities?q=lon", nil)
+	rr := httptest.NewRecorder()
+	handlers.NewWeatherHandler(mc).SearchCities(rr, req)
+
+	require.Equal(t, http.StatusOK, rr.Code)
+	var result []models.City
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &result))
+	assert.Len(t, result, 2)
+	mc.AssertExpectations(t)
+}
+
+func TestWeatherHandler_SearchCities_MissingQuery(t *testing.T) {
+	mc := new(mockWeatherClient)
+	req := httptest.NewRequest("GET", "/cities", nil)
+	rr := httptest.NewRecorder()
+	handlers.NewWeatherHandler(mc).SearchCities(rr, req)
+	assert.Equal(t, http.StatusBadRequest, rr.Code)
+}
+
+// --- UserHandler tests ---
+
+func TestUserHandler_GetUser_OK(t *testing.T) {
+	user := &models.User{ID: 1, GithubID: 12345, Login: "testuser"}
 	handler := handlers.NewUserHandler(nil)
 
-	testUser := &models.User{
-		ID:       1,
-		GithubID: 12345,
-		Login:    "testuser",
-		Name:     stringPtr("Test User"),
-		Email:    stringPtr("test@example.com"),
-	}
-
-	req, err := http.NewRequest("GET", "/user", nil)
-	require.NoError(t, err)
-
-	ctx := context.WithValue(req.Context(), middleware.UserContextKey, testUser)
-	req = req.WithContext(ctx)
-
+	req := httptest.NewRequest("GET", "/user", nil)
+	ctx := context.WithValue(req.Context(), middleware.UserContextKey, user)
 	rr := httptest.NewRecorder()
+	handler.GetUser(rr, req.WithContext(ctx))
 
+	require.Equal(t, http.StatusOK, rr.Code)
+	var resp map[string]any
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &resp))
+	assert.Equal(t, float64(12345), resp["github_id"])
+}
+
+func TestUserHandler_GetUser_Unauthorized(t *testing.T) {
+	handler := handlers.NewUserHandler(nil)
+	req := httptest.NewRequest("GET", "/user", nil)
+	rr := httptest.NewRecorder()
 	handler.GetUser(rr, req)
-
-	assert.Equal(t, http.StatusOK, rr.Code)
-
-	var response map[string]any
-	err = json.Unmarshal(rr.Body.Bytes(), &response)
-	require.NoError(t, err)
-
-	t.Logf("Response: %v", response)
-
-	if val, ok := response["github_id"]; ok {
-		assert.Equal(t, float64(12345), val, "github_id should be 12345")
-	} else if val, ok := response["id"]; ok {
-		assert.Equal(t, float64(1), val, "id should be 1")
-	} else {
-		t.Fatalf("Neither github_id nor id found in response: %v", response)
-	}
+	assert.Equal(t, http.StatusUnauthorized, rr.Code)
 }
 
-func TestAuthHandler_RequestAuth(t *testing.T) {
-	mockOAuth := new(MockGitHubOAuth)
-	mockOAuth.On("GetAuthURL").Return("https://github.com/login/oauth/authorize?client_id=test", "test-state")
+func TestUserHandler_GetQuota_GustKey(t *testing.T) {
+	resetAt := time.Now().Add(time.Hour)
+	qs := new(mockQuotaStore)
+	qs.On("GetAPIKeyQuota", "gust_abc").Return(50, 10, resetAt, nil)
 
-	authRequestHandler := func(w http.ResponseWriter, r *http.Request) {
-		callbackPort := r.URL.Query().Get("callback_port")
-		if callbackPort == "" {
-			callbackPort = "9876"
-		}
-
-		authURL, state := mockOAuth.GetAuthURL()
-
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]string{
-			"url":   authURL,
-			"state": state,
-		})
-	}
-
-	req, err := http.NewRequest("GET", "/api/auth/request", nil)
-	require.NoError(t, err)
-
+	handler := handlers.NewUserHandler(qs)
+	req := httptest.NewRequest("GET", "/quota?api_key=gust_abc", nil)
 	rr := httptest.NewRecorder()
+	handler.GetQuota(rr, req)
 
-	authRequestHandler(rr, req)
-
-	assert.Equal(t, http.StatusOK, rr.Code)
-
-	var response map[string]string
-	err = json.Unmarshal(rr.Body.Bytes(), &response)
-	require.NoError(t, err)
-
-	assert.Equal(t, "https://github.com/login/oauth/authorize?client_id=test", response["url"])
-	assert.Equal(t, "test-state", response["state"])
-
-	mockOAuth.AssertExpectations(t)
+	require.Equal(t, http.StatusOK, rr.Code)
+	var resp map[string]any
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &resp))
+	assert.Equal(t, float64(50), resp["daily_limit"])
+	assert.Equal(t, float64(10), resp["daily_used"])
+	assert.Equal(t, float64(40), resp["remaining"])
+	assert.Equal(t, false, resp["unlimited"])
+	qs.AssertExpectations(t)
 }
 
-func stringPtr(s string) *string {
-	return &s
+func TestUserHandler_GetQuota_CustomKey(t *testing.T) {
+	handler := handlers.NewUserHandler(nil)
+	req := httptest.NewRequest("GET", "/quota", nil)
+	ctx := context.WithValue(req.Context(), middleware.CustomApiContextKey, "my_ow_key")
+	rr := httptest.NewRecorder()
+	handler.GetQuota(rr, req.WithContext(ctx))
+
+	require.Equal(t, http.StatusOK, rr.Code)
+	var resp map[string]any
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &resp))
+	assert.Equal(t, true, resp["unlimited"])
 }
+
+func stringPtr(s string) *string { return &s }
