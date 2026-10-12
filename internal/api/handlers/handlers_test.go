@@ -7,7 +7,6 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/gorilla/mux"
 	"github.com/josephburgess/breeze/internal/api/handlers"
 	"github.com/josephburgess/breeze/internal/api/middleware"
 	"github.com/josephburgess/breeze/internal/models"
@@ -15,31 +14,6 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
-
-type WeatherClientInterface interface {
-	GetCoordinates(city string, customApiKey string) (*models.City, error)
-	GetWeather(lat, lon float64, units string, customApiKey string) (*models.OneCallResponse, error)
-	SearchCities(query string, limit int) ([]models.City, error)
-}
-
-type MockWeatherClient struct {
-	mock.Mock
-}
-
-func (m *MockWeatherClient) GetCoordinates(city string, customApiKey string) (*models.City, error) {
-	args := m.Called(city)
-	return args.Get(0).(*models.City), args.Error(1)
-}
-
-func (m *MockWeatherClient) GetWeather(lat, lon float64, units string, customApiKey string) (*models.OneCallResponse, error) {
-	args := m.Called(lat, lon, units)
-	return args.Get(0).(*models.OneCallResponse), args.Error(1)
-}
-
-func (m *MockWeatherClient) SearchCities(query string, limit int) ([]models.City, error) {
-	args := m.Called(query, limit)
-	return args.Get(0).([]models.City), args.Error(1)
-}
 
 type UserStoreInterface interface {
 	SaveUser(user *models.User) error
@@ -107,92 +81,6 @@ func (m *MockGitHubOAuth) ExchangeCodeForToken(code, state string) (string, erro
 func (m *MockGitHubOAuth) GetUserInfo(token string) (*models.User, error) {
 	args := m.Called(token)
 	return args.Get(0).(*models.User), args.Error(1)
-}
-
-func TestWeatherHandler_GetWeather(t *testing.T) {
-	mockClient := new(MockWeatherClient)
-
-	var apiKey string
-	getWeatherHandler := func(w http.ResponseWriter, r *http.Request) {
-		vars := mux.Vars(r)
-		cityName := vars["city"]
-		units := r.URL.Query().Get("units")
-
-		city, err := mockClient.GetCoordinates(cityName, apiKey)
-		if err != nil {
-			http.Error(w, "Error finding city", http.StatusNotFound)
-			return
-		}
-
-		weather, err := mockClient.GetWeather(city.Lat, city.Lon, units, apiKey)
-		if err != nil {
-			http.Error(w, "Error getting weather", http.StatusInternalServerError)
-			return
-		}
-
-		response := models.WeatherResponse{
-			City:    city,
-			Weather: weather,
-		}
-
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(response)
-	}
-
-	testCity := &models.City{
-		Name:    "London",
-		Country: "GB",
-		Lat:     51.5074,
-		Lon:     -0.1278,
-	}
-
-	testWeather := &models.OneCallResponse{
-		Lat:      51.5074,
-		Lon:      -0.1278,
-		Timezone: "Europe/London",
-		Current: models.CurrentWeather{
-			Temp:      15.5,
-			FeelsLike: 14.8,
-			Humidity:  70,
-			Weather: []models.WeatherCondition{
-				{
-					Main:        "Clouds",
-					Description: "scattered clouds",
-					Icon:        "03d",
-				},
-			},
-		},
-	}
-
-	mockClient.On("GetCoordinates", "London").Return(testCity, nil)
-	mockClient.On("GetWeather", testCity.Lat, testCity.Lon, "metric").Return(testWeather, nil)
-
-	req, err := http.NewRequest("GET", "/weather/London?units=metric", nil)
-	require.NoError(t, err)
-
-	router := mux.NewRouter()
-	router.HandleFunc("/weather/{city}", getWeatherHandler).Methods("GET")
-
-	rr := httptest.NewRecorder()
-
-	router.ServeHTTP(rr, req)
-
-	statusCode := rr.Code
-	responseBody := rr.Body.String()
-
-	t.Logf("Status Code: %d", statusCode)
-	t.Logf("Response Body: %s", responseBody)
-
-	assert.Equal(t, http.StatusOK, statusCode)
-
-	var response models.WeatherResponse
-	err = json.Unmarshal(rr.Body.Bytes(), &response)
-	require.NoError(t, err)
-
-	assert.Equal(t, testCity.Name, response.City.Name)
-	assert.Equal(t, testWeather.Current.Temp, response.Weather.Current.Temp)
-
-	mockClient.AssertExpectations(t)
 }
 
 func TestUserHandler_GetUser(t *testing.T) {

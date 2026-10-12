@@ -1,146 +1,128 @@
 package weather
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"net/url"
+	"strconv"
+	"strings"
+	"time"
 
-	"github.com/josephburgess/breeze/internal/logging"
 	"github.com/josephburgess/breeze/internal/models"
 )
 
+const (
+	DefaultBaseURL = "https://api.openweathermap.org"
+	requestTimeout = 10 * time.Second
+	searchLimit    = 5
+)
+
+var (
+	ErrNotFound   = errors.New("place not found")
+	ErrInvalidKey = errors.New("openweather rejected the api key")
+)
+
+type UpstreamError struct {
+	Status int
+}
+
+func (e *UpstreamError) Error() string {
+	return fmt.Sprintf("openweather returned status %d", e.Status)
+}
+
+// Client is the only way breeze talks to OpenWeather.
 type Client struct {
-	ApiKey  string
-	BaseURL string
+	apiKey  string
+	baseURL string
+	http    *http.Client
 }
 
-func NewClient(apiKey string) *Client {
-	logging.Info("Initializing Weather Client")
+func NewClient(apiKey, baseURL string) *Client {
 	return &Client{
-		ApiKey:  apiKey,
-		BaseURL: "https://api.openweathermap.org/",
+		apiKey:  apiKey,
+		baseURL: strings.TrimSuffix(baseURL, "/"),
+		http:    &http.Client{Timeout: requestTimeout},
 	}
 }
 
-func (c *Client) GetCoordinates(city string, customApiKey string) (*models.City, error) {
-	apiKey := c.ApiKey
-	if customApiKey != "" {
-		apiKey = customApiKey
-	}
-
-	url := fmt.Sprintf("%sgeo/1.0/direct?q=%s&limit=1&appid=%s", c.BaseURL, city, apiKey)
-	logging.Info("Fetching coordinates for city: %s", city)
-
-	resp, err := http.Get(url)
-	if err != nil {
-		logging.Error("HTTP request failed", err)
-		return nil, fmt.Errorf("HTTP request failed: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode == 401 {
-		logging.Error("Invalid API key", nil)
-		return nil, fmt.Errorf("invalid_api_key: custom api key is not valid - please run setup again or set with flag -K")
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		bodyStr := string(body)
-		logging.Error("API error", fmt.Errorf("status %d: %s", resp.StatusCode, bodyStr))
-		return nil, fmt.Errorf("API error (%d): %s", resp.StatusCode, bodyStr)
-	}
-
+// Forecast geocodes place and fetches its weather. customKey, when set,
+// replaces the server key on every upstream call.
+func (c *Client) Forecast(ctx context.Context, place, units, customKey string) (*models.WeatherResponse, error) {
 	var cities []models.City
-	if err := json.NewDecoder(resp.Body).Decode(&cities); err != nil {
-		logging.Error("Failed to decode JSON response", err)
-		return nil, fmt.Errorf("unmarshaling JSON: %w", err)
+	if err := c.get(ctx, "/geo/1.0/direct", url.Values{"q": {place}, "limit": {"1"}}, customKey, &cities); err != nil {
+		return nil, err
 	}
-
 	if len(cities) == 0 {
-		logging.Warn("No coordinates found for city: %s", city)
-		return nil, fmt.Errorf("no coordinates found for %s", city)
+		return nil, ErrNotFound
 	}
+	city := cities[0]
 
-	logging.Info("Coordinates found for city: %s (lat: %f, lon: %f)", city, cities[0].Lat, cities[0].Lon)
-	return &cities[0], nil
+	weather, err := c.ForecastAt(ctx, city.Lat, city.Lon, units, customKey)
+	if err != nil {
+		return nil, err
+	}
+	return &models.WeatherResponse{City: &city, Weather: weather}, nil
 }
 
-func (c *Client) GetWeather(lat, lon float64, units string, customApiKey string) (*models.OneCallResponse, error) {
-	var url string
-	apiKey := c.ApiKey
-	if customApiKey != "" {
-		apiKey = customApiKey
+func (c *Client) ForecastAt(ctx context.Context, lat, lon float64, units, customKey string) (*models.OneCallResponse, error) {
+	params := url.Values{
+		"lat": {strconv.FormatFloat(lat, 'f', -1, 64)},
+		"lon": {strconv.FormatFloat(lon, 'f', -1, 64)},
 	}
 	if units != "" {
-		url = fmt.Sprintf("%sdata/3.0/onecall?lat=%f&lon=%f&appid=%s&units=%s",
-			c.BaseURL, lat, lon, apiKey, units)
-		logging.Info("Fetching weather data with units=%s", units)
-	} else {
-		url = fmt.Sprintf("%sdata/3.0/onecall?lat=%f&lon=%f&appid=%s",
-			c.BaseURL, lat, lon, c.ApiKey)
-		logging.Info("Fetching weather data with default units (Kelvin)")
+		params.Set("units", units)
 	}
 
-	logging.Info("Fetching weather data for lat: %f, lon: %f", lat, lon)
-
-	resp, err := http.Get(url)
-	if err != nil {
-		logging.Error("HTTP request failed", err)
-		return nil, fmt.Errorf("HTTP request failed: %w", err)
+	var weather models.OneCallResponse
+	if err := c.get(ctx, "/data/3.0/onecall", params, customKey, &weather); err != nil {
+		return nil, err
 	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		logging.Warn("API returned non-200 status: %d", resp.StatusCode)
-		return nil, fmt.Errorf("API returned status %d", resp.StatusCode)
-	}
-
-	var result models.OneCallResponse
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		logging.Error("Failed to decode JSON response", err)
-		return nil, fmt.Errorf("unmarshaling JSON: %w", err)
-	}
-
-	logging.Info("Successfully fetched weather data for lat: %f, lon: %f", lat, lon)
-	return &result, nil
+	return &weather, nil
 }
 
-func (c *Client) SearchCities(query string, limit int) ([]models.City, error) {
-	escapedQuery := url.QueryEscape(query)
-	url := fmt.Sprintf("%sgeo/1.0/direct?q=%s&limit=%d&appid=%s", c.BaseURL, escapedQuery, limit, c.ApiKey)
+func (c *Client) Search(ctx context.Context, query string) ([]models.City, error) {
+	cities := []models.City{}
+	params := url.Values{"q": {query}, "limit": {strconv.Itoa(searchLimit)}}
+	if err := c.get(ctx, "/geo/1.0/direct", params, "", &cities); err != nil {
+		return nil, err
+	}
+	return cities, nil
+}
 
-	resp, err := http.Get(url)
+func (c *Client) get(ctx context.Context, path string, params url.Values, customKey string, out any) error {
+	params.Set("appid", c.apiKey)
+	if customKey != "" {
+		params.Set("appid", customKey)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+path+"?"+params.Encode(), nil)
 	if err != nil {
-		logging.Error("HTTP request failed", err)
-		return nil, fmt.Errorf("HTTP request failed: %w", err)
+		return fmt.Errorf("build openweather request: %w", err)
+	}
+
+	resp, err := c.http.Do(req)
+	if err != nil {
+		// the url holds the key, so drop it from the error
+		var urlErr *url.Error
+		if errors.As(err, &urlErr) {
+			err = urlErr.Err
+		}
+		return fmt.Errorf("call openweather %s: %w", path, err)
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusOK {
-		data, _ := io.ReadAll(resp.Body)
-		body := string(data)
-		return nil, fmt.Errorf("API returned status %d %s", resp.StatusCode, body)
+	switch {
+	case resp.StatusCode == http.StatusUnauthorized:
+		return ErrInvalidKey
+	case resp.StatusCode != http.StatusOK:
+		return &UpstreamError{Status: resp.StatusCode}
 	}
 
-	data, err := io.ReadAll(resp.Body)
-	if err != nil {
-		logging.Error("Failed to read response body", err)
-		return nil, fmt.Errorf("failed to read response body: %w", err)
+	if err := json.NewDecoder(resp.Body).Decode(out); err != nil {
+		return fmt.Errorf("decode openweather %s: %w", path, err)
 	}
-
-	var cities []models.City
-	if err := json.Unmarshal(data, &cities); err != nil {
-		logging.Error("Failed to decode JSON response", err)
-		return nil, fmt.Errorf("unmarshaling JSON: %w", err)
-	}
-
-	if len(cities) == 0 {
-		logging.Warn("No cities found for query: %s", query)
-		return []models.City{}, nil
-	}
-
-	logging.Info("Found %d cities for query: %s", len(cities), query)
-	return cities, nil
+	return nil
 }

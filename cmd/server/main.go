@@ -14,7 +14,7 @@ import (
 func main() {
 	cfg := config.Load()
 
-	weatherClient := weather.NewClient(cfg.OpenWeatherAPIKey)
+	weatherClient := weather.NewClient(cfg.OpenWeatherAPIKey, weather.DefaultBaseURL)
 
 	userStore, err := store.NewUserStore(cfg.DBPath)
 	if err != nil {
