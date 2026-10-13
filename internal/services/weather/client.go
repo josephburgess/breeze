@@ -18,6 +18,9 @@ const (
 	DefaultBaseURL = "https://api.openweathermap.org"
 	requestTimeout = 10 * time.Second
 	searchLimit    = 5
+	// places do not move; forecasts refresh upstream about every 10 minutes
+	geocodeTTL  = 24 * time.Hour
+	forecastTTL = 10 * time.Minute
 )
 
 var (
@@ -38,6 +41,9 @@ type Client struct {
 	apiKey  string
 	baseURL string
 	http    *http.Client
+
+	places    *ttlCache[models.City]
+	forecasts *ttlCache[*models.OneCallResponse]
 }
 
 func NewClient(apiKey, baseURL string) *Client {
@@ -45,20 +51,29 @@ func NewClient(apiKey, baseURL string) *Client {
 		apiKey:  apiKey,
 		baseURL: strings.TrimSuffix(baseURL, "/"),
 		http:    &http.Client{Timeout: requestTimeout},
+
+		places:    newTTLCache[models.City](geocodeTTL),
+		forecasts: newTTLCache[*models.OneCallResponse](forecastTTL),
 	}
 }
 
 // Forecast geocodes place and fetches its weather. customKey, when set,
-// replaces the server key on every upstream call.
+// replaces the server key on every upstream call. Results are cached per key,
+// so a bad custom key never reads what a good key fetched.
 func (c *Client) Forecast(ctx context.Context, place, units, customKey string) (*models.WeatherResponse, error) {
-	var cities []models.City
-	if err := c.get(ctx, "/geo/1.0/direct", url.Values{"q": {place}, "limit": {"1"}}, customKey, &cities); err != nil {
-		return nil, err
+	placeKey := customKey + "|" + strings.ToLower(strings.TrimSpace(place))
+	city, ok := c.places.get(placeKey)
+	if !ok {
+		var cities []models.City
+		if err := c.get(ctx, "/geo/1.0/direct", url.Values{"q": {place}, "limit": {"1"}}, customKey, &cities); err != nil {
+			return nil, err
+		}
+		if len(cities) == 0 {
+			return nil, ErrNotFound
+		}
+		city = cities[0]
+		c.places.put(placeKey, city)
 	}
-	if len(cities) == 0 {
-		return nil, ErrNotFound
-	}
-	city := cities[0]
 
 	weather, err := c.ForecastAt(ctx, city.Lat, city.Lon, units, customKey)
 	if err != nil {
@@ -68,6 +83,11 @@ func (c *Client) Forecast(ctx context.Context, place, units, customKey string) (
 }
 
 func (c *Client) ForecastAt(ctx context.Context, lat, lon float64, units, customKey string) (*models.OneCallResponse, error) {
+	cacheKey := fmt.Sprintf("%s|%.4f|%.4f|%s", customKey, lat, lon, units)
+	if weather, ok := c.forecasts.get(cacheKey); ok {
+		return weather, nil
+	}
+
 	params := url.Values{
 		"lat": {strconv.FormatFloat(lat, 'f', -1, 64)},
 		"lon": {strconv.FormatFloat(lon, 'f', -1, 64)},
@@ -80,6 +100,7 @@ func (c *Client) ForecastAt(ctx context.Context, lat, lon float64, units, custom
 	if err := c.get(ctx, "/data/3.0/onecall", params, customKey, &weather); err != nil {
 		return nil, err
 	}
+	c.forecasts.put(cacheKey, &weather)
 	return &weather, nil
 }
 

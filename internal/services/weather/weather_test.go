@@ -130,3 +130,50 @@ func TestSearch_NoMatchesIsEmptyList(t *testing.T) {
 	require.NoError(t, err)
 	assert.Empty(t, cities)
 }
+
+func TestForecast_RepeatCallIsServedFromCache(t *testing.T) {
+	var calls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		if r.URL.Path == "/geo/1.0/direct" {
+			w.Write([]byte(londonGeo))
+			return
+		}
+		w.Write([]byte(forecast))
+	}))
+	defer server.Close()
+
+	client := weather.NewClient("server-key", server.URL)
+	_, err := client.Forecast(context.Background(), "London", "metric", "")
+	require.NoError(t, err)
+	resp, err := client.Forecast(context.Background(), "london", "metric", "")
+	require.NoError(t, err)
+
+	assert.Equal(t, int32(2), calls.Load())
+	assert.Equal(t, "London", resp.City.Name)
+}
+
+func TestForecast_CacheIsNotSharedAcrossKeys(t *testing.T) {
+	var calls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		if r.URL.Query().Get("appid") == "bad-key" {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		if r.URL.Path == "/geo/1.0/direct" {
+			w.Write([]byte(londonGeo))
+			return
+		}
+		w.Write([]byte(forecast))
+	}))
+	defer server.Close()
+
+	client := weather.NewClient("server-key", server.URL)
+	_, err := client.Forecast(context.Background(), "London", "metric", "")
+	require.NoError(t, err)
+	_, err = client.Forecast(context.Background(), "London", "metric", "bad-key")
+
+	assert.ErrorIs(t, err, weather.ErrInvalidKey)
+	assert.Equal(t, int32(3), calls.Load())
+}
