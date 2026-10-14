@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/josephburgess/breeze/internal/api/respond"
 	"github.com/josephburgess/breeze/internal/logging"
 	"github.com/josephburgess/breeze/internal/models"
 	"github.com/josephburgess/breeze/internal/services/store"
@@ -26,7 +27,7 @@ func ApiKeyAuth(userStore *store.UserStore) func(http.Handler) http.Handler {
 
 			if apiKey == "" {
 				logging.Warn("API key is missing in request")
-				http.Error(w, "API key is required", http.StatusUnauthorized)
+				respond.Error(w, http.StatusUnauthorized, respond.CodeMissingKey, "an API key is required")
 				return
 			}
 
@@ -59,11 +60,11 @@ func ApiKeyAuth(userStore *store.UserStore) func(http.Handler) http.Handler {
 
 			if err != nil {
 				if rateLimitErr, ok := err.(*store.RateLimitError); ok {
-					http.Error(w, rateLimitErr.Message, http.StatusTooManyRequests)
+					respond.Error(w, http.StatusTooManyRequests, respond.CodeRateLimited, rateLimitErr.Message)
 					return
 				}
 				logging.Warn("Invalid API key attempted: %s", apiKey)
-				http.Error(w, "Invalid API key", http.StatusUnauthorized)
+				respond.Error(w, http.StatusUnauthorized, respond.CodeInvalidKey, "invalid API key")
 				return
 			}
 

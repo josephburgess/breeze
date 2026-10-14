@@ -1,12 +1,12 @@
 package handlers
 
 import (
-	"encoding/json"
 	"errors"
 	"net/http"
 
 	"github.com/gorilla/mux"
 	"github.com/josephburgess/breeze/internal/api/middleware"
+	"github.com/josephburgess/breeze/internal/api/respond"
 	"github.com/josephburgess/breeze/internal/logging"
 	"github.com/josephburgess/breeze/internal/services/weather"
 )
@@ -28,14 +28,13 @@ func (h *WeatherHandler) GetWeather(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(resp)
+	respond.JSON(w, http.StatusOK, resp)
 }
 
 func (h *WeatherHandler) SearchCities(w http.ResponseWriter, r *http.Request) {
 	query := r.URL.Query().Get("q")
 	if query == "" {
-		http.Error(w, "City query parameter is required", http.StatusBadRequest)
+		respond.Error(w, http.StatusBadRequest, respond.CodeBadRequest, "the q parameter is required")
 		return
 	}
 
@@ -45,18 +44,17 @@ func (h *WeatherHandler) SearchCities(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(cities)
+	respond.JSON(w, http.StatusOK, cities)
 }
 
 func writeWeatherError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, weather.ErrNotFound):
-		http.Error(w, "Error finding city", http.StatusNotFound)
+		respond.Error(w, http.StatusNotFound, respond.CodeNotFound, "city not found")
 	case errors.Is(err, weather.ErrInvalidKey):
-		http.Error(w, "Invalid API key", http.StatusUnauthorized)
+		respond.Error(w, http.StatusUnauthorized, respond.CodeInvalidKey, "OpenWeather rejected the API key")
 	default:
 		logging.Error("Error getting weather", err)
-		http.Error(w, "Error getting weather", http.StatusBadGateway)
+		respond.Error(w, http.StatusBadGateway, respond.CodeUpstream, "could not get weather from OpenWeather")
 	}
 }

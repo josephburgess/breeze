@@ -69,4 +69,5 @@ func TestGetWeather_UnknownCityIsNotFound(t *testing.T) {
 	router.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/weather/Nowhere", nil))
 
 	assert.Equal(t, http.StatusNotFound, rr.Code)
+	assert.JSONEq(t, `{"code":"not_found","message":"city not found"}`, rr.Body.String())
 }

@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/josephburgess/breeze/internal/api/respond"
 	"github.com/josephburgess/breeze/internal/logging"
 	"github.com/josephburgess/breeze/internal/models"
 	"github.com/josephburgess/breeze/internal/services/auth"
@@ -37,8 +38,7 @@ func (h *AuthHandler) RequestAuth(w http.ResponseWriter, r *http.Request) {
 
 	logging.Info("Generated authentication URL: %s", authURL)
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{
+	respond.JSON(w, http.StatusOK, map[string]string{
 		"url":   authURL,
 		"state": state,
 	})
@@ -62,7 +62,7 @@ func (h *AuthHandler) handleGitHubCallback(w http.ResponseWriter, code, state st
 	user, apiKey, err := h.handleGitHubAuthCode(code, state)
 	if err != nil {
 		logging.Error("Authentication failed", err)
-		http.Error(w, "Authentication failed", http.StatusInternalServerError)
+		respond.Error(w, http.StatusUnauthorized, respond.CodeAuthFailed, "GitHub sign in failed")
 		return
 	}
 
@@ -111,7 +111,7 @@ func (h *AuthHandler) ExchangeToken(w http.ResponseWriter, r *http.Request) {
 
 	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
 		logging.Error("Invalid request body", err)
-		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		respond.Error(w, http.StatusBadRequest, respond.CodeBadRequest, "invalid request body")
 		return
 	}
 
@@ -120,14 +120,13 @@ func (h *AuthHandler) ExchangeToken(w http.ResponseWriter, r *http.Request) {
 	user, apiKey, err := h.handleGitHubAuthCode(request.Code, "")
 	if err != nil {
 		logging.Error("Authentication failed", err)
-		http.Error(w, "Authentication failed", http.StatusInternalServerError)
+		respond.Error(w, http.StatusUnauthorized, respond.CodeAuthFailed, "GitHub sign in failed")
 		return
 	}
 
 	logging.Info("Token exchanged successfully for user: %s", user.Login)
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{
+	respond.JSON(w, http.StatusOK, map[string]string{
 		"api_key":     apiKey,
 		"github_user": user.Login,
 	})
