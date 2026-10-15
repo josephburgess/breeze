@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -45,6 +46,13 @@ func NewUserStore(dbPath string) (*UserStore, error) {
 		logging.Error("Failed to initialize existing records", err)
 		return nil, fmt.Errorf("failed to initialize existing records: %w", err)
 	}
+
+	// sqlite has one writer; one connection avoids SQLITE_BUSY under load
+	sqlDB, err := db.DB()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get sql db: %w", err)
+	}
+	sqlDB.SetMaxOpenConns(1)
 
 	return &UserStore{db: db}, nil
 }
@@ -157,7 +165,7 @@ func (s *UserStore) CreateAPICredential(githubUserID int64) (*models.ApiCredenti
 		GithubUserID:    githubUserID,
 		ApiKey:          apiKey,
 		DailyResetAt:    time.Now().UTC(),
-		RateLimitPerDay: 50,
+		RateLimitPerDay: DefaultRateLimitPerDay,
 	}
 
 	if err := s.db.Create(apiCredential).Error; err != nil {
@@ -172,70 +180,64 @@ func (s *UserStore) CreateAPICredential(githubUserID int64) (*models.ApiCredenti
 	return apiCredential, nil
 }
 
-func (s *UserStore) ValidateAPIKey(apiKey string) (*models.User, int, int, time.Time, error) {
-	logging.Info("Validating API key")
+// DefaultRateLimitPerDay is the daily request limit for a new gust key.
+const DefaultRateLimitPerDay = 50
 
-	var credential models.ApiCredential
-	if err := s.db.Where("api_key = ?", apiKey).First(&credential).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			logging.Warn("Invalid API key")
-			return nil, 0, 0, time.Time{}, fmt.Errorf("invalid API key")
-		}
-		logging.Error("Database error", err)
-		return nil, 0, 0, time.Time{}, err
-	}
+var (
+	ErrInvalidKey  = errors.New("invalid API key")
+	ErrRateLimited = errors.New("daily rate limit exceeded")
+)
 
+type Usage struct {
+	User      *models.User
+	Limit     int
+	Remaining int
+	Reset     time.Time
+}
+
+// Spend counts one request against apiKey. It returns ErrInvalidKey for an
+// unknown key and ErrRateLimited, with the usage, when the day is spent.
+func (s *UserStore) Spend(ctx context.Context, apiKey string) (Usage, error) {
+	db := s.db.WithContext(ctx)
 	now := time.Now().UTC()
 	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
 
-	resetTime := today.Add(24 * time.Hour)
-	if !credential.DailyResetAt.IsZero() {
-		resetTime = credential.DailyResetAt.Add(24 * time.Hour)
+	if err := db.Model(&models.ApiCredential{}).
+		Where("api_key = ? AND daily_reset_at < ?", apiKey, today).
+		Updates(map[string]any{"daily_request_count": 0, "daily_reset_at": today}).Error; err != nil {
+		return Usage{}, fmt.Errorf("reset daily count: %w", err)
 	}
 
-	updates := map[string]any{
-		"last_used":     now,
-		"request_count": gorm.Expr("request_count + 1"),
+	// one conditional write, so parallel requests cannot pass the limit
+	spent := db.Model(&models.ApiCredential{}).
+		Where("api_key = ? AND daily_request_count < rate_limit_per_day", apiKey).
+		Updates(map[string]any{
+			"daily_request_count": gorm.Expr("daily_request_count + 1"),
+			"request_count":       gorm.Expr("request_count + 1"),
+			"last_used":           now,
+		})
+	if spent.Error != nil {
+		return Usage{}, fmt.Errorf("spend request: %w", spent.Error)
 	}
 
-	if credential.DailyResetAt.IsZero() || credential.DailyResetAt.Before(today) {
-		updates["daily_request_count"] = 1
-		updates["daily_reset_at"] = today
-
-		credential.DailyRequestCount = 1
-		credential.DailyResetAt = today
-	} else {
-		if credential.DailyRequestCount >= credential.RateLimitPerDay {
-			return nil, credential.RateLimitPerDay, credential.DailyRequestCount, resetTime, &RateLimitError{
-				Message:   fmt.Sprintf("rate limit exceeded: maximum of %d requests per day", credential.RateLimitPerDay),
-				ResetTime: resetTime,
-				RateLimit: credential.RateLimitPerDay,
-				Remaining: 0,
-			}
+	var credential models.ApiCredential
+	if err := db.Preload("User").Where("api_key = ?", apiKey).First(&credential).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return Usage{}, ErrInvalidKey
 		}
-
-		updates["daily_request_count"] = gorm.Expr("daily_request_count + 1")
-		credential.DailyRequestCount++
+		return Usage{}, fmt.Errorf("read credential: %w", err)
 	}
 
-	if err := s.db.Model(&credential).Updates(updates).Error; err != nil {
-		logging.Error("Failed to update API key usage", err)
-		return nil, 0, 0, time.Time{}, fmt.Errorf("failed to update API key usage: %w", err)
+	usage := Usage{
+		User:      &credential.User,
+		Limit:     credential.RateLimitPerDay,
+		Remaining: max(credential.RateLimitPerDay-credential.DailyRequestCount, 0),
+		Reset:     credential.DailyResetAt.Add(24 * time.Hour),
 	}
-
-	user, err := s.GetUser(credential.GithubUserID)
-	return user, credential.RateLimitPerDay, credential.DailyRequestCount, resetTime, err
-}
-
-type RateLimitError struct {
-	Message   string
-	ResetTime time.Time
-	RateLimit int
-	Remaining int
-}
-
-func (e *RateLimitError) Error() string {
-	return e.Message
+	if spent.RowsAffected == 0 {
+		return usage, ErrRateLimited
+	}
+	return usage, nil
 }
 
 func generateAPIKey() string {

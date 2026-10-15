@@ -1,6 +1,9 @@
 package store
 
 import (
+	"context"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -105,91 +108,71 @@ func TestUserStore_GetOrCreateAPICredential(t *testing.T) {
 	})
 }
 
-func TestUserStore_ValidateAPIKey(t *testing.T) {
+func TestUserStore_Spend(t *testing.T) {
 	store := setupTestDB(t)
 
-	user := &models.User{
-		GithubID: 123,
-		Login:    "testuser",
-		Token:    "token123",
-	}
+	user := &models.User{GithubID: 123, Login: "testuser", Token: "token123"}
 	require.NoError(t, store.SaveUser(user))
-
 	cred, err := store.GetOrCreateAPICredential(user.GithubID)
 	require.NoError(t, err)
 
-	t.Run("valid api key", func(t *testing.T) {
-		validatedUser, limit, used, resetTime, err := store.ValidateAPIKey(cred.ApiKey)
+	t.Run("valid key spends one request", func(t *testing.T) {
+		require.NoError(t, store.db.Model(&models.ApiCredential{}).Where("api_key = ?", cred.ApiKey).
+			Updates(map[string]any{"daily_request_count": 0, "daily_reset_at": time.Now().UTC()}).Error)
+
+		usage, err := store.Spend(context.Background(), cred.ApiKey)
+
 		require.NoError(t, err)
-		assert.Equal(t, user.GithubID, validatedUser.GithubID)
-		assert.Greater(t, limit, 0)
-		assert.GreaterOrEqual(t, used, 1)
-		assert.False(t, resetTime.IsZero())
+		assert.Equal(t, "testuser", usage.User.Login)
+		assert.Equal(t, DefaultRateLimitPerDay, usage.Limit)
+		assert.Equal(t, DefaultRateLimitPerDay-1, usage.Remaining)
+		assert.True(t, usage.Reset.After(time.Now()))
 	})
 
-	t.Run("invalid api key", func(t *testing.T) {
-		_, _, _, _, err := store.ValidateAPIKey("invalid_key")
-		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "invalid API key")
+	t.Run("unknown key is invalid", func(t *testing.T) {
+		_, err := store.Spend(context.Background(), "gust_nope")
+
+		assert.ErrorIs(t, err, ErrInvalidKey)
 	})
 
-	t.Run("rate limit exceeded", func(t *testing.T) {
-		err := store.db.Model(&models.ApiCredential{}).
-			Where("api_key = ?", cred.ApiKey).
-			Updates(map[string]interface{}{
-				"daily_request_count": 50,
-				"daily_reset_at":      time.Now().UTC(),
-			}).Error
-		require.NoError(t, err)
+	t.Run("spent key is rate limited", func(t *testing.T) {
+		require.NoError(t, store.db.Model(&models.ApiCredential{}).Where("api_key = ?", cred.ApiKey).
+			Updates(map[string]any{"daily_request_count": DefaultRateLimitPerDay, "daily_reset_at": time.Now().UTC()}).Error)
 
-		_, _, _, _, err = store.ValidateAPIKey(cred.ApiKey)
-		assert.Error(t, err)
-		var rateLimitErr *RateLimitError
-		assert.ErrorAs(t, err, &rateLimitErr)
+		usage, err := store.Spend(context.Background(), cred.ApiKey)
+
+		assert.ErrorIs(t, err, ErrRateLimited)
+		assert.Equal(t, 0, usage.Remaining)
 	})
 
-	t.Run("daily reset", func(t *testing.T) {
-		yesterday := time.Now().UTC().Add(-24 * time.Hour)
-		err := store.db.Model(&models.ApiCredential{}).
-			Where("api_key = ?", cred.ApiKey).
-			Updates(map[string]interface{}{
-				"daily_reset_at":      yesterday,
-				"daily_request_count": 50,
-			}).Error
-		require.NoError(t, err)
+	t.Run("count resets on a new day", func(t *testing.T) {
+		require.NoError(t, store.db.Model(&models.ApiCredential{}).Where("api_key = ?", cred.ApiKey).
+			Updates(map[string]any{"daily_request_count": DefaultRateLimitPerDay, "daily_reset_at": time.Now().UTC().Add(-48 * time.Hour)}).Error)
 
-		validatedUser, limit, used, resetTime, err := store.ValidateAPIKey(cred.ApiKey)
-		require.NoError(t, err)
-		assert.Equal(t, user.GithubID, validatedUser.GithubID)
-		assert.Greater(t, limit, 0)
-		assert.Equal(t, 1, used)
-		assert.False(t, resetTime.IsZero())
+		usage, err := store.Spend(context.Background(), cred.ApiKey)
 
-		var updatedCred models.ApiCredential
-		err = store.db.Where("api_key = ?", cred.ApiKey).First(&updatedCred).Error
 		require.NoError(t, err)
-		assert.Equal(t, 1, updatedCred.DailyRequestCount)
+		assert.Equal(t, DefaultRateLimitPerDay-1, usage.Remaining)
 	})
 
-	t.Run("request counting", func(t *testing.T) {
-		err := store.db.Model(&models.ApiCredential{}).
-			Where("api_key = ?", cred.ApiKey).
-			Updates(map[string]interface{}{
-				"daily_request_count": 0,
-				"daily_reset_at":      time.Now().UTC(),
-			}).Error
-		require.NoError(t, err)
+	t.Run("parallel requests never pass the limit", func(t *testing.T) {
+		require.NoError(t, store.db.Model(&models.ApiCredential{}).Where("api_key = ?", cred.ApiKey).
+			Updates(map[string]any{"daily_request_count": DefaultRateLimitPerDay - 5, "daily_reset_at": time.Now().UTC()}).Error)
 
-		numRequests := 3
-		for i := 0; i < numRequests; i++ {
-			_, _, _, _, err := store.ValidateAPIKey(cred.ApiKey)
-			require.NoError(t, err)
+		var wg sync.WaitGroup
+		var ok atomic.Int32
+		for range 20 {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				if _, err := store.Spend(context.Background(), cred.ApiKey); err == nil {
+					ok.Add(1)
+				}
+			}()
 		}
+		wg.Wait()
 
-		var updatedCred models.ApiCredential
-		err = store.db.Where("api_key = ?", cred.ApiKey).First(&updatedCred).Error
-		require.NoError(t, err)
-		assert.Equal(t, numRequests, updatedCred.DailyRequestCount)
+		assert.Equal(t, int32(5), ok.Load())
 	})
 }
 

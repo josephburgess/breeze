@@ -26,7 +26,7 @@ type ApiCredential struct {
 	RequestCount      int        `gorm:"default:0" json:"request_count"`
 	User              User       `gorm:"foreignKey:GithubUserID;references:GithubID" json:"-"`
 	DailyRequestCount int        `gorm:"default:0"`
-	RateLimitPerDay   int        `gorm:"default:40"`
+	RateLimitPerDay   int        `gorm:"not null"`
 	DailyResetAt      time.Time
 }
 
