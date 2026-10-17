@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -93,14 +94,11 @@ func (h *AuthHandler) handleGitHubAuthCode(code, state string) (*models.User, st
 		return nil, "", fmt.Errorf("failed to save user: %w", err)
 	}
 
-	credential, err := h.userStore.GetOrCreateAPICredential(user.GithubID)
+	apiKey, err := h.userStore.IssueAPIKey(context.Background(), user.GithubID)
 	if err != nil {
-		logging.Error("Failed to create API credential", err)
-		return nil, "", fmt.Errorf("failed to create API credential: %w", err)
+		return nil, "", fmt.Errorf("failed to issue API key: %w", err)
 	}
-
-	logging.Info("Successfully created API credential for user: %s", user.Login)
-	return user, credential.ApiKey, nil
+	return user, apiKey, nil
 }
 
 func (h *AuthHandler) ExchangeToken(w http.ResponseWriter, r *http.Request) {

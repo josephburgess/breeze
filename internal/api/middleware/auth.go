@@ -28,7 +28,7 @@ type KeySpender interface {
 func ApiKeyAuth(keys KeySpender) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			apiKey := r.URL.Query().Get("api_key")
+			apiKey := requestKey(r)
 			if apiKey == "" {
 				respond.Error(w, http.StatusUnauthorized, respond.CodeMissingKey, "an API key is required")
 				return
@@ -67,4 +67,13 @@ func ApiKeyAuth(keys KeySpender) func(http.Handler) http.Handler {
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
+}
+
+// requestKey reads the Authorization header. The api_key query parameter
+// stays for gust versions that do not send the header.
+func requestKey(r *http.Request) string {
+	if key, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer "); ok {
+		return strings.TrimSpace(key)
+	}
+	return r.URL.Query().Get("api_key")
 }

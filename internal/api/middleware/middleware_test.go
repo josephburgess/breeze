@@ -86,3 +86,16 @@ func TestApiKeyAuth_CustomKeySkipsStore(t *testing.T) {
 	assert.Equal(t, "custom-api-user|owm123", rr.Body.String())
 	keys.AssertNotCalled(t, "Spend", mock.Anything)
 }
+
+func TestApiKeyAuth_ReadsBearerHeader(t *testing.T) {
+	keys := new(MockKeys)
+	keys.On("Spend", "gust_header").Return(store.Usage{User: &models.User{Login: "joe"}, Limit: 50}, nil)
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.Header.Set("Authorization", "Bearer gust_header")
+	rr := httptest.NewRecorder()
+
+	middleware.ApiKeyAuth(keys)(reached).ServeHTTP(rr, req)
+
+	assert.Equal(t, http.StatusOK, rr.Code)
+	assert.Equal(t, "joe|", rr.Body.String())
+}

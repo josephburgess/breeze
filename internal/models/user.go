@@ -20,7 +20,7 @@ type User struct {
 type ApiCredential struct {
 	ID                string     `gorm:"primaryKey" json:"id"`
 	GithubUserID      int64      `gorm:"not null;unique;index" json:"github_user_id"`
-	ApiKey            string     `gorm:"unique;not null" json:"api_key"`
+	KeyHash           string     `gorm:"uniqueIndex" json:"-"`
 	LastUsed          *time.Time `json:"last_used,omitempty"`
 	CreatedAt         time.Time  `gorm:"autoCreateTime" json:"created_at"`
 	RequestCount      int        `gorm:"default:0" json:"request_count"`
