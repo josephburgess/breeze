@@ -11,77 +11,8 @@ import (
 	"github.com/josephburgess/breeze/internal/api/middleware"
 	"github.com/josephburgess/breeze/internal/models"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
-
-type UserStoreInterface interface {
-	SaveUser(user *models.User) error
-	GetUser(githubID int64) (*models.User, error)
-	GetOrCreateAPICredential(githubUserID int64) (*models.ApiCredential, error)
-	ValidateAPIKey(apiKey string) (*models.User, error)
-	Close() error
-}
-
-type MockUserStore struct {
-	mock.Mock
-}
-
-func (m *MockUserStore) SaveUser(user *models.User) error {
-	args := m.Called(user)
-	return args.Error(0)
-}
-
-func (m *MockUserStore) GetUser(githubID int64) (*models.User, error) {
-	args := m.Called(githubID)
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
-	}
-	return args.Get(0).(*models.User), args.Error(1)
-}
-
-func (m *MockUserStore) GetOrCreateAPICredential(githubUserID int64) (*models.ApiCredential, error) {
-	args := m.Called(githubUserID)
-	return args.Get(0).(*models.ApiCredential), args.Error(1)
-}
-
-func (m *MockUserStore) ValidateAPIKey(apiKey string) (*models.User, error) {
-	args := m.Called(apiKey)
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
-	}
-	return args.Get(0).(*models.User), args.Error(1)
-}
-
-func (m *MockUserStore) Close() error {
-	args := m.Called()
-	return args.Error(0)
-}
-
-type GitHubOAuthInterface interface {
-	GetAuthURL() (string, string)
-	ExchangeCodeForToken(code, state string) (string, error)
-	GetUserInfo(token string) (*models.User, error)
-}
-
-type MockGitHubOAuth struct {
-	mock.Mock
-}
-
-func (m *MockGitHubOAuth) GetAuthURL() (string, string) {
-	args := m.Called()
-	return args.String(0), args.String(1)
-}
-
-func (m *MockGitHubOAuth) ExchangeCodeForToken(code, state string) (string, error) {
-	args := m.Called(code, state)
-	return args.String(0), args.Error(1)
-}
-
-func (m *MockGitHubOAuth) GetUserInfo(token string) (*models.User, error) {
-	args := m.Called(token)
-	return args.Get(0).(*models.User), args.Error(1)
-}
 
 func TestUserHandler_GetUser(t *testing.T) {
 	handler := handlers.NewUserHandler()
@@ -119,44 +50,6 @@ func TestUserHandler_GetUser(t *testing.T) {
 	} else {
 		t.Fatalf("Neither github_id nor id found in response: %v", response)
 	}
-}
-
-func TestAuthHandler_RequestAuth(t *testing.T) {
-	mockOAuth := new(MockGitHubOAuth)
-	mockOAuth.On("GetAuthURL").Return("https://github.com/login/oauth/authorize?client_id=test", "test-state")
-
-	authRequestHandler := func(w http.ResponseWriter, r *http.Request) {
-		callbackPort := r.URL.Query().Get("callback_port")
-		if callbackPort == "" {
-			callbackPort = "9876"
-		}
-
-		authURL, state := mockOAuth.GetAuthURL()
-
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]string{
-			"url":   authURL,
-			"state": state,
-		})
-	}
-
-	req, err := http.NewRequest("GET", "/api/auth/request", nil)
-	require.NoError(t, err)
-
-	rr := httptest.NewRecorder()
-
-	authRequestHandler(rr, req)
-
-	assert.Equal(t, http.StatusOK, rr.Code)
-
-	var response map[string]string
-	err = json.Unmarshal(rr.Body.Bytes(), &response)
-	require.NoError(t, err)
-
-	assert.Equal(t, "https://github.com/login/oauth/authorize?client_id=test", response["url"])
-	assert.Equal(t, "test-state", response["state"])
-
-	mockOAuth.AssertExpectations(t)
 }
 
 func stringPtr(s string) *string {

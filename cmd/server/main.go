@@ -23,13 +23,9 @@ func main() {
 	}
 	defer userStore.Close()
 
-	githubOAuth := auth.NewGitHubOAuth(
-		cfg.GithubClientID,
-		cfg.GithubClientSecret,
-		cfg.GithubRedirectURI,
-	)
+	authFlow := auth.NewFlow(auth.NewGitHub(cfg.GithubClientID, cfg.GithubClientSecret), userStore)
 
-	router := api.NewRouter(weatherClient, userStore, githubOAuth)
+	router := api.NewRouter(weatherClient, userStore, authFlow)
 	router.Use(logging.Middleware)
 
 	logging.Info("Starting server on port %s", cfg.Port)

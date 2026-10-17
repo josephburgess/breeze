@@ -1,131 +1,70 @@
 package handlers
 
 import (
-	"context"
 	"encoding/json"
-	"fmt"
 	"net/http"
-	"strings"
+	"net/url"
+	"strconv"
 
 	"github.com/josephburgess/breeze/internal/api/respond"
 	"github.com/josephburgess/breeze/internal/logging"
-	"github.com/josephburgess/breeze/internal/models"
 	"github.com/josephburgess/breeze/internal/services/auth"
-	"github.com/josephburgess/breeze/internal/services/store"
-	"github.com/josephburgess/breeze/internal/templates"
 )
 
+const defaultCallbackPort = 9876
+
 type AuthHandler struct {
-	githubOAuth *auth.GitHubOAuth
-	userStore   *store.UserStore
+	flow *auth.Flow
 }
 
-func NewAuthHandler(githubOAuth *auth.GitHubOAuth, userStore *store.UserStore) *AuthHandler {
-	return &AuthHandler{
-		githubOAuth: githubOAuth,
-		userStore:   userStore,
-	}
+func NewAuthHandler(flow *auth.Flow) *AuthHandler {
+	return &AuthHandler{flow: flow}
 }
 
 func (h *AuthHandler) RequestAuth(w http.ResponseWriter, r *http.Request) {
-	callbackPort := r.URL.Query().Get("callback_port")
-	if callbackPort == "" {
-		callbackPort = "9876"
+	port := defaultCallbackPort
+	if raw := r.URL.Query().Get("callback_port"); raw != "" {
+		p, err := strconv.Atoi(raw)
+		if err != nil || p < 1 || p > 65535 {
+			respond.Error(w, http.StatusBadRequest, respond.CodeBadRequest, "callback_port must be a port number")
+			return
+		}
+		port = p
 	}
 
-	callbackURL := fmt.Sprintf("http://localhost:%s/callback", callbackPort)
-	h.githubOAuth.RedirectURI = callbackURL
-	authURL, state := h.githubOAuth.GetAuthURL()
-
-	logging.Info("Generated authentication URL: %s", authURL)
-
-	respond.JSON(w, http.StatusOK, map[string]string{
-		"url":   authURL,
-		"state": state,
-	})
+	authURL, state := h.flow.Begin(port)
+	respond.JSON(w, http.StatusOK, map[string]string{"url": authURL, "state": state})
 }
 
+// Callback forwards a GitHub redirect to the gust that started the login.
 func (h *AuthHandler) Callback(w http.ResponseWriter, r *http.Request) {
-	code := r.URL.Query().Get("code")
 	state := r.URL.Query().Get("state")
-
-	if strings.HasPrefix(h.githubOAuth.RedirectURI, "http://localhost:") {
-		redirectURL := fmt.Sprintf("%s?code=%s&state=%s", h.githubOAuth.RedirectURI, code, state)
-		logging.Info("Redirecting to local callback: %s", redirectURL)
-		http.Redirect(w, r, redirectURL, http.StatusFound)
+	redirectURI, ok := h.flow.RedirectFor(state)
+	if !ok {
+		respond.Error(w, http.StatusBadRequest, respond.CodeAuthFailed, "unknown or expired sign in")
 		return
 	}
-
-	h.handleGitHubCallback(w, code, state)
-}
-
-func (h *AuthHandler) handleGitHubCallback(w http.ResponseWriter, code, state string) {
-	user, apiKey, err := h.handleGitHubAuthCode(code, state)
-	if err != nil {
-		logging.Error("Authentication failed", err)
-		respond.Error(w, http.StatusUnauthorized, respond.CodeAuthFailed, "GitHub sign in failed")
-		return
-	}
-
-	logging.Info("User authenticated successfully: %s", user.Login)
-
-	w.Header().Set("Content-Type", "text/html")
-	if err := templates.RenderSuccessTemplate(w, user.Login, apiKey); err != nil {
-		logging.Error("Failed to render template", err)
-		http.Error(w, "Failed to render template", http.StatusInternalServerError)
-	}
-}
-
-func (h *AuthHandler) handleGitHubAuthCode(code, state string) (*models.User, string, error) {
-	token, err := h.githubOAuth.ExchangeCodeForToken(code, state)
-	if err != nil {
-		logging.Error("Failed to exchange code for token", err)
-		return nil, "", fmt.Errorf("failed to exchange code for token: %w", err)
-	}
-
-	user, err := h.githubOAuth.GetUserInfo(token)
-	if err != nil {
-		logging.Error("Failed to get user info", err)
-		return nil, "", fmt.Errorf("failed to get user info: %w", err)
-	}
-
-	if err := h.userStore.SaveUser(user); err != nil {
-		logging.Error("Failed to save user", err)
-		return nil, "", fmt.Errorf("failed to save user: %w", err)
-	}
-
-	apiKey, err := h.userStore.IssueAPIKey(context.Background(), user.GithubID)
-	if err != nil {
-		return nil, "", fmt.Errorf("failed to issue API key: %w", err)
-	}
-	return user, apiKey, nil
+	params := url.Values{"code": {r.URL.Query().Get("code")}, "state": {state}}
+	http.Redirect(w, r, redirectURI+"?"+params.Encode(), http.StatusFound)
 }
 
 func (h *AuthHandler) ExchangeToken(w http.ResponseWriter, r *http.Request) {
 	var request struct {
 		Code         string `json:"code"`
+		State        string `json:"state"`
 		CallbackPort int    `json:"callback_port"`
 	}
-
 	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
-		logging.Error("Invalid request body", err)
 		respond.Error(w, http.StatusBadRequest, respond.CodeBadRequest, "invalid request body")
 		return
 	}
 
-	h.githubOAuth.RedirectURI = fmt.Sprintf("http://localhost:%d/callback", request.CallbackPort)
-
-	user, apiKey, err := h.handleGitHubAuthCode(request.Code, "")
+	login, apiKey, err := h.flow.Complete(r.Context(), request.Code, request.State, request.CallbackPort)
 	if err != nil {
-		logging.Error("Authentication failed", err)
+		logging.Error("GitHub sign in failed", err)
 		respond.Error(w, http.StatusUnauthorized, respond.CodeAuthFailed, "GitHub sign in failed")
 		return
 	}
 
-	logging.Info("Token exchanged successfully for user: %s", user.Login)
-
-	respond.JSON(w, http.StatusOK, map[string]string{
-		"api_key":     apiKey,
-		"github_user": user.Login,
-	})
+	respond.JSON(w, http.StatusOK, map[string]string{"api_key": apiKey, "github_user": login})
 }
