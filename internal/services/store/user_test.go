@@ -47,7 +47,6 @@ func TestUserStore_SaveUser(t *testing.T) {
 			user: &models.User{
 				GithubID: 123,
 				Login:    "testuser",
-				Token:    "token123",
 			},
 			wantErr: false,
 		},
@@ -56,7 +55,6 @@ func TestUserStore_SaveUser(t *testing.T) {
 			user: &models.User{
 				GithubID: 123,
 				Login:    "testuser_updated",
-				Token:    "token456",
 			},
 			wantErr: false,
 		},
@@ -74,7 +72,6 @@ func TestUserStore_SaveUser(t *testing.T) {
 			savedUser, err := store.GetUser(tt.user.GithubID)
 			require.NoError(t, err)
 			assert.Equal(t, tt.user.Login, savedUser.Login)
-			assert.Equal(t, tt.user.Token, savedUser.Token)
 		})
 	}
 }
@@ -82,7 +79,7 @@ func TestUserStore_SaveUser(t *testing.T) {
 func TestUserStore_IssueAPIKey(t *testing.T) {
 	store := setupTestDB(t)
 
-	user := &models.User{GithubID: 123, Login: "testuser", Token: "token123"}
+	user := &models.User{GithubID: 123, Login: "testuser"}
 	require.NoError(t, store.SaveUser(user))
 
 	t.Run("new key works and only its hash is stored", func(t *testing.T) {
@@ -140,12 +137,15 @@ func TestNewUserStore_HashesPlaintextKeys(t *testing.T) {
 	assert.NotEqual(t, "gust_old", cred.ID)
 	assert.False(t, store.db.Migrator().HasColumn("api_credentials", "api_key"))
 	assert.True(t, store.db.Migrator().HasIndex(&models.ApiCredential{}, "KeyHash"))
+	assert.False(t, store.db.Migrator().HasColumn(&models.User{}, "token"))
+	assert.False(t, store.db.Migrator().HasIndex(&models.ApiCredential{}, "idx_api_credentials_github_user_id"))
+	require.NoError(t, store.SaveUser(&models.User{GithubID: 8, Login: "new"}))
 }
 
 func TestUserStore_Spend(t *testing.T) {
 	store := setupTestDB(t)
 
-	user := &models.User{GithubID: 123, Login: "testuser", Token: "token123"}
+	user := &models.User{GithubID: 123, Login: "testuser"}
 	require.NoError(t, store.SaveUser(user))
 	key, err := store.IssueAPIKey(context.Background(), user.GithubID)
 	require.NoError(t, err)

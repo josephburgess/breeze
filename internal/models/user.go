@@ -12,14 +12,13 @@ type User struct {
 	Login     string    `gorm:"not null" json:"login"`
 	Name      *string   `json:"name,omitempty"`
 	Email     *string   `json:"email,omitempty"`
-	Token     string    `gorm:"not null" json:"-"`
 	CreatedAt time.Time `gorm:"autoCreateTime" json:"created_at"`
 	LastLogin time.Time `gorm:"autoUpdateTime" json:"last_login"`
 }
 
 type ApiCredential struct {
 	ID                string     `gorm:"primaryKey" json:"id"`
-	GithubUserID      int64      `gorm:"not null;unique;index" json:"github_user_id"`
+	GithubUserID      int64      `gorm:"not null;unique" json:"github_user_id"`
 	KeyHash           string     `gorm:"uniqueIndex" json:"-"`
 	LastUsed          *time.Time `json:"last_used,omitempty"`
 	CreatedAt         time.Time  `gorm:"autoCreateTime" json:"created_at"`

@@ -37,8 +37,6 @@ jobs:
             OPENWEATHER_API_KEY=${{ secrets.OPENWEATHER_API_KEY }}
             GITHUB_CLIENT_ID=${{ secrets.GH_CLIENT_ID }}
             GITHUB_CLIENT_SECRET=${{ secrets.GH_CLIENT_SECRET }}
-            GITHUB_REDIRECT_URI=${{ secrets.GH_REDIRECT_URI }}
-            JWT_SECRET=${{ secrets.JWT_SECRET }}
             DB_PATH=${{ secrets.DB_PATH }}
             EOF
 

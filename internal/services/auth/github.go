@@ -39,7 +39,7 @@ func (g *GitHub) AuthURL(redirectURI, state string) string {
 		"client_id":    {g.ClientID},
 		"redirect_uri": {redirectURI},
 		"state":        {state},
-		"scope":        {"user:email,public_repo"},
+		"scope":        {"read:user"},
 	}
 	return g.WebURL + "/login/oauth/authorize?" + params.Encode()
 }
@@ -106,5 +106,5 @@ func (g *GitHub) User(ctx context.Context, token string) (*models.User, error) {
 	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
 		return nil, fmt.Errorf("decode github user: %w", err)
 	}
-	return &models.User{GithubID: body.ID, Login: body.Login, Name: body.Name, Email: body.Email, Token: token}, nil
+	return &models.User{GithubID: body.ID, Login: body.Login, Name: body.Name, Email: body.Email}, nil
 }

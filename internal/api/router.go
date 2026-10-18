@@ -14,7 +14,6 @@ func NewRouter(weatherClient *weather.Client, userStore *store.UserStore, authFl
 
 	// create handlers
 	authHandler := handlers.NewAuthHandler(authFlow)
-	userHandler := handlers.NewUserHandler()
 	weatherHandler := handlers.NewWeatherHandler(weatherClient)
 
 	// auth routes (public)
@@ -26,7 +25,6 @@ func NewRouter(weatherClient *weather.Client, userStore *store.UserStore, authFl
 	// auth'ed routes (needs key)
 	apiRouter := router.PathPrefix("/api").Subrouter()
 	apiRouter.Use(middleware.ApiKeyAuth(userStore))
-	apiRouter.HandleFunc("/user", userHandler.GetUser).Methods("GET")
 	apiRouter.HandleFunc("/weather/{city}", weatherHandler.GetWeather).Methods("GET")
 
 	return router

@@ -48,9 +48,8 @@ func NewUserStore(dbPath string) (*UserStore, error) {
 		return nil, fmt.Errorf("failed to hash api keys: %w", err)
 	}
 
-	if err := initializeExistingRecords(db); err != nil {
-		logging.Error("Failed to initialize existing records", err)
-		return nil, fmt.Errorf("failed to initialize existing records: %w", err)
+	if err := dropGitHubTokens(db); err != nil {
+		return nil, fmt.Errorf("failed to drop github tokens: %w", err)
 	}
 
 	// sqlite has one writer; one connection avoids SQLITE_BUSY under load
@@ -63,20 +62,23 @@ func NewUserStore(dbPath string) (*UserStore, error) {
 	return &UserStore{db: db}, nil
 }
 
-func initializeExistingRecords(db *gorm.DB) error {
-	var count int64
-	db.Model(&models.ApiCredential{}).Where("daily_reset_at IS NULL").Count(&count)
-
-	if count > 0 {
-		logging.Info("Updating daily_reset_at for existing records")
-		if err := db.Model(&models.ApiCredential{}).
-			Where("daily_reset_at IS NULL").
-			Update("daily_reset_at", time.Now().UTC()).Error; err != nil {
+// dropGitHubTokens removes the stored GitHub tokens, which breeze never used,
+// and the index that duplicated the github_user_id unique constraint.
+func dropGitHubTokens(db *gorm.DB) error {
+	m := db.Migrator()
+	if m.HasIndex(&models.ApiCredential{}, "idx_api_credentials_github_user_id") {
+		if err := m.DropIndex(&models.ApiCredential{}, "idx_api_credentials_github_user_id"); err != nil {
 			return err
 		}
 	}
-
-	return nil
+	if !m.HasColumn(&models.User{}, "token") {
+		return nil
+	}
+	if err := m.DropColumn(&models.User{}, "token"); err != nil {
+		return err
+	}
+	// the drop rebuilds the table without its indexes
+	return db.AutoMigrate(&models.User{})
 }
 
 func (s *UserStore) Close() error {
@@ -97,7 +99,6 @@ func (s *UserStore) SaveUser(user *models.User) error {
 		existingUser.Login = user.Login
 		existingUser.Name = user.Name
 		existingUser.Email = user.Email
-		existingUser.Token = user.Token
 		existingUser.LastLogin = time.Now()
 
 		return s.db.Save(&existingUser).Error
