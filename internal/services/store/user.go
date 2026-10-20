@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"time"
@@ -13,6 +14,7 @@ import (
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
+	"gorm.io/gorm/logger"
 
 	"github.com/google/uuid"
 	"github.com/josephburgess/breeze/internal/logging"
@@ -29,18 +31,21 @@ func NewUserStore(dbPath string) (*UserStore, error) {
 	}
 	dir := filepath.Dir(dbPath)
 	if err := os.MkdirAll(dir, os.ModePerm); err != nil {
-		logging.Error("error creating db directory", err)
 		return nil, fmt.Errorf("failed to create database directory: %w", err)
 	}
 
-	db, err := gorm.Open(sqlite.Open(dbPath), &gorm.Config{})
+	db, err := gorm.Open(sqlite.Open(dbPath), &gorm.Config{
+		Logger: logger.New(log.New(os.Stderr, "", log.LstdFlags), logger.Config{
+			SlowThreshold:             200 * time.Millisecond,
+			LogLevel:                  logger.Warn,
+			IgnoreRecordNotFoundError: true,
+		}),
+	})
 	if err != nil {
-		logging.Error("Failed to open database", err)
 		return nil, fmt.Errorf("failed to open database: %w", err)
 	}
 
 	if err := db.AutoMigrate(&models.User{}, &models.ApiCredential{}); err != nil {
-		logging.Error("Failed to migrate models", err)
 		return nil, fmt.Errorf("failed to migrate models: %w", err)
 	}
 
@@ -84,14 +89,12 @@ func dropGitHubTokens(db *gorm.DB) error {
 func (s *UserStore) Close() error {
 	sqlDB, err := s.db.DB()
 	if err != nil {
-		logging.Warn("Failed closing db", err)
+		return err
 	}
 	return sqlDB.Close()
 }
 
 func (s *UserStore) SaveUser(user *models.User) error {
-	logging.Info("Saving user: %d (%s)", user.GithubID, user.Login)
-
 	var existingUser models.User
 	result := s.db.Where("github_id = ?", user.GithubID).First(&existingUser)
 
@@ -113,10 +116,8 @@ func (s *UserStore) GetUser(githubID int64) (*models.User, error) {
 	var user models.User
 	if err := s.db.Where("github_id = ?", githubID).First(&user).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			logging.Warn("user not found: %d", githubID)
 			return nil, nil
 		}
-		logging.Error("error fetching user", err)
 		return nil, err
 	}
 
