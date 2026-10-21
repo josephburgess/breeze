@@ -32,6 +32,7 @@ func NewRouter(weatherClient *weather.Client, userStore *store.UserStore, authFl
 	apiRouter := router.PathPrefix("/api").Subrouter()
 	apiRouter.Use(middleware.ApiKeyAuth(userStore))
 	apiRouter.HandleFunc("/weather/{city}", weatherHandler.GetWeather).Methods("GET")
+	apiRouter.HandleFunc("/v1/weather", weatherHandler.GetWeatherAt).Methods("GET")
 
 	return router
 }

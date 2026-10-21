@@ -71,3 +71,36 @@ func TestGetWeather_UnknownCityIsNotFound(t *testing.T) {
 	assert.Equal(t, http.StatusNotFound, rr.Code)
 	assert.JSONEq(t, `{"code":"not_found","message":"city not found"}`, rr.Body.String())
 }
+
+func TestGetWeatherAt_FetchesByCoordinatesWithoutGeocode(t *testing.T) {
+	var paths []string
+	owm := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		paths = append(paths, r.URL.Path)
+		assert.Equal(t, "40.7128", r.URL.Query().Get("lat"))
+		assert.Equal(t, "-74.006", r.URL.Query().Get("lon"))
+		w.Write([]byte(`{"current":{"temp":9}}`))
+	}))
+	defer owm.Close()
+	h := handlers.NewWeatherHandler(weather.NewClient("k", owm.URL))
+
+	rr := httptest.NewRecorder()
+	h.GetWeatherAt(rr, httptest.NewRequest(http.MethodGet, "/api/v1/weather?lat=40.7128&lon=-74.006&units=metric", nil))
+
+	require.Equal(t, http.StatusOK, rr.Code)
+	assert.Equal(t, []string{"/data/3.0/onecall"}, paths)
+	var resp models.WeatherResponse
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &resp))
+	assert.Equal(t, 40.7128, resp.City.Lat)
+	assert.Equal(t, 9.0, resp.Weather.Current.Temp)
+}
+
+func TestGetWeatherAt_RejectsBadCoordinates(t *testing.T) {
+	h := handlers.NewWeatherHandler(weather.NewClient("k", "http://unused"))
+
+	for _, query := range []string{"lat=91&lon=0", "lat=abc&lon=0", "lon=0"} {
+		rr := httptest.NewRecorder()
+		h.GetWeatherAt(rr, httptest.NewRequest(http.MethodGet, "/api/v1/weather?"+query, nil))
+
+		assert.Equal(t, http.StatusBadRequest, rr.Code, query)
+	}
+}
