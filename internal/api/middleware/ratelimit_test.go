@@ -31,11 +31,27 @@ func TestPerIP_CountsEachIPApart(t *testing.T) {
 
 	for _, ip := range []string{"10.0.0.1", "10.0.0.2"} {
 		req := httptest.NewRequest(http.MethodGet, "/", nil)
-		req.Header.Set("X-Forwarded-For", ip+", 172.18.0.1")
+		req.Header.Set("X-Forwarded-For", ip)
 		rr := httptest.NewRecorder()
 		limited.ServeHTTP(rr, req)
 		codes = append(codes, rr.Code)
 	}
 
 	assert.Equal(t, []int{200, 200}, codes)
+}
+
+func TestPerIP_ForgedForwardedForDoesNotSkipTheLimit(t *testing.T) {
+	limited := middleware.PerIP(1, time.Minute)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	var codes []int
+
+	for _, forged := range []string{"1.1.1.1", "2.2.2.2"} {
+		req := httptest.NewRequest(http.MethodGet, "/", nil)
+		// the proxy appends the real client after whatever the client sent
+		req.Header.Set("X-Forwarded-For", forged+", 10.0.0.1")
+		rr := httptest.NewRecorder()
+		limited.ServeHTTP(rr, req)
+		codes = append(codes, rr.Code)
+	}
+
+	assert.Equal(t, []int{200, 429}, codes)
 }

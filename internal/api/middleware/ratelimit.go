@@ -49,12 +49,12 @@ func PerIP(limit int, per time.Duration) func(http.Handler) http.Handler {
 	}
 }
 
-// clientIP takes the first X-Forwarded-For entry, because breeze runs behind
-// a proxy. A forged header only moves the client to another bucket.
+// clientIP takes the last X-Forwarded-For entry: the proxy in front of breeze
+// appends it, so the client cannot forge it.
 func clientIP(r *http.Request) string {
 	if fwd := r.Header.Get("X-Forwarded-For"); fwd != "" {
-		first, _, _ := strings.Cut(fwd, ",")
-		return strings.TrimSpace(first)
+		entries := strings.Split(fwd, ",")
+		return strings.TrimSpace(entries[len(entries)-1])
 	}
 	host, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {
