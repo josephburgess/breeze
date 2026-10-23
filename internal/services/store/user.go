@@ -136,12 +136,13 @@ func (s *UserStore) IssueAPIKey(ctx context.Context, githubUserID int64) (string
 		return "", fmt.Errorf("user with ID %d not found", githubUserID)
 	}
 
+	now := time.Now().UTC()
 	key := "gust_" + uuid.NewString()
 	credential := &models.ApiCredential{
 		ID:              uuid.NewString(),
 		GithubUserID:    githubUserID,
 		KeyHash:         hashKey(key),
-		DailyResetAt:    time.Now().UTC(),
+		DailyResetAt:    time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC),
 		RateLimitPerDay: DefaultRateLimitPerDay,
 	}
 	if err := db.Clauses(clause.OnConflict{

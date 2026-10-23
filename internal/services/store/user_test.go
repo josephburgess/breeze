@@ -106,6 +106,19 @@ func TestUserStore_IssueAPIKey(t *testing.T) {
 		assert.NoError(t, err)
 	})
 
+	t.Run("new key resets at the next UTC midnight", func(t *testing.T) {
+		other := &models.User{GithubID: 456, Login: "other"}
+		require.NoError(t, store.SaveUser(other))
+		key, err := store.IssueAPIKey(context.Background(), other.GithubID)
+		require.NoError(t, err)
+
+		usage, err := store.Spend(context.Background(), key)
+
+		require.NoError(t, err)
+		now := time.Now().UTC()
+		assert.Equal(t, time.Date(now.Year(), now.Month(), now.Day()+1, 0, 0, 0, 0, time.UTC), usage.Reset.UTC())
+	})
+
 	t.Run("unknown user has no key", func(t *testing.T) {
 		_, err := store.IssueAPIKey(context.Background(), 999)
 		assert.Error(t, err)
