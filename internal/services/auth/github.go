@@ -1,143 +1,110 @@
 package auth
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
+	"strings"
+	"time"
 
-	"github.com/google/uuid"
-	"github.com/josephburgess/breeze/internal/logging"
 	"github.com/josephburgess/breeze/internal/models"
 )
 
-type GitHubOAuth struct {
+const githubTimeout = 10 * time.Second
+
+var httpClient = &http.Client{Timeout: githubTimeout}
+
+// GitHub is the OAuth adapter. It holds no per-login state.
+type GitHub struct {
 	ClientID     string
 	ClientSecret string
-	RedirectURI  string
-	States       map[string]bool
+	WebURL       string
+	APIURL       string
 }
 
-func NewGitHubOAuth(clientID, clientSecret, redirectURI string) *GitHubOAuth {
-	if redirectURI == "" {
-		redirectURI = "http://localhost:8080/api/auth/callback"
-	}
-
-	return &GitHubOAuth{
+func NewGitHub(clientID, clientSecret string) *GitHub {
+	return &GitHub{
 		ClientID:     clientID,
 		ClientSecret: clientSecret,
-		RedirectURI:  redirectURI,
-		States:       make(map[string]bool),
+		WebURL:       "https://github.com",
+		APIURL:       "https://api.github.com",
 	}
 }
 
-func (g *GitHubOAuth) GetAuthURL() (string, string) {
-	state := uuid.New().String()
-	g.States[state] = true
-
-	authURL := fmt.Sprintf(
-		"https://github.com/login/oauth/authorize?client_id=%s&redirect_uri=%s&state=%s&scope=user:email,public_repo",
-		g.ClientID,
-		url.QueryEscape(g.RedirectURI),
-		state,
-	)
-
-	return authURL, state
+func (g *GitHub) AuthURL(redirectURI, state string) string {
+	params := url.Values{
+		"client_id":    {g.ClientID},
+		"redirect_uri": {redirectURI},
+		"state":        {state},
+		"scope":        {"read:user"},
+	}
+	return g.WebURL + "/login/oauth/authorize?" + params.Encode()
 }
 
-func (g *GitHubOAuth) ExchangeCodeForToken(code, state string) (string, error) {
-	if state != "" && !g.States[state] {
-		logging.Warn("Invalid state parameter received: %s", state)
-		return "", fmt.Errorf("invalid state parameter")
-	}
-
-	if state != "" {
-		delete(g.States, state)
-	}
-
-	logging.Info("Exchanging code for token with GitHub")
-	tokenURL := "https://github.com/login/oauth/access_token"
-	resp, err := http.PostForm(tokenURL, url.Values{
+func (g *GitHub) Exchange(ctx context.Context, code, redirectURI string) (string, error) {
+	form := url.Values{
 		"client_id":     {g.ClientID},
 		"client_secret": {g.ClientSecret},
 		"code":          {code},
-		"redirect_uri":  {g.RedirectURI},
-	})
+		"redirect_uri":  {redirectURI},
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, g.WebURL+"/login/oauth/access_token", strings.NewReader(form.Encode()))
 	if err != nil {
-		logging.Error("Token exchange request failed", err)
-		return "", fmt.Errorf("token exchange request failed: %w", err)
+		return "", err
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("token exchange: %w", err)
 	}
 	defer resp.Body.Close()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		logging.Error("Failed to read token response body", err)
-		return "", fmt.Errorf("failed to read response body: %w", err)
+		return "", fmt.Errorf("read token response: %w", err)
 	}
-
 	values, err := url.ParseQuery(string(body))
 	if err != nil {
-		logging.Error("Failed to parse token response", err)
-		return "", fmt.Errorf("failed to parse token response: %w", err)
+		return "", fmt.Errorf("parse token response: %w", err)
 	}
-
-	token := values.Get("access_token")
-	if token == "" {
-		errorMsg := values.Get("error_description")
-		if errorMsg == "" {
-			errorMsg = "No access token received"
-		}
-		logging.Warn("GitHub OAuth error: %s", errorMsg)
-		return "", fmt.Errorf("github oauth error: %s", errorMsg)
+	if token := values.Get("access_token"); token != "" {
+		return token, nil
 	}
-
-	return token, nil
+	if msg := values.Get("error_description"); msg != "" {
+		return "", fmt.Errorf("github oauth: %s", msg)
+	}
+	return "", fmt.Errorf("github oauth: no access token")
 }
 
-func (g *GitHubOAuth) GetUserInfo(token string) (*models.User, error) {
-	req, err := http.NewRequest("GET", "https://api.github.com/user", nil)
+func (g *GitHub) User(ctx context.Context, token string) (*models.User, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, g.APIURL+"/user", nil)
 	if err != nil {
-		logging.Error("Failed to create request for user info", err)
-		return nil, fmt.Errorf("failed to create request: %w", err)
+		return nil, err
 	}
-
-	req.Header.Set("Authorization", fmt.Sprintf("token %s", token))
+	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("Accept", "application/json")
 
-	client := &http.Client{}
-	resp, err := client.Do(req)
+	resp, err := httpClient.Do(req)
 	if err != nil {
-		logging.Error("User info request failed", err)
-		return nil, fmt.Errorf("user info request failed: %w", err)
+		return nil, fmt.Errorf("github user: %w", err)
 	}
 	defer resp.Body.Close()
-
 	if resp.StatusCode != http.StatusOK {
-		logging.Warn("GitHub API returned status: %d", resp.StatusCode)
-		return nil, fmt.Errorf("github API returned status %d", resp.StatusCode)
+		return nil, fmt.Errorf("github user: status %d", resp.StatusCode)
 	}
 
-	var githubResponse struct {
+	var body struct {
 		ID    int64   `json:"id"`
 		Login string  `json:"login"`
 		Name  *string `json:"name"`
 		Email *string `json:"email"`
 	}
-
-	if err := json.NewDecoder(resp.Body).Decode(&githubResponse); err != nil {
-		logging.Error("Failed to decode user info", err)
-		return nil, fmt.Errorf("failed to decode user info: %w", err)
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		return nil, fmt.Errorf("decode github user: %w", err)
 	}
-
-	user := &models.User{
-		GithubID: githubResponse.ID,
-		Login:    githubResponse.Login,
-		Name:     githubResponse.Name,
-		Email:    githubResponse.Email,
-		Token:    token,
-	}
-
-	logging.Info("Successfully retrieved GitHub user: %s (ID: %d)", user.Login, user.GithubID)
-	return user, nil
+	return &models.User{GithubID: body.ID, Login: body.Login, Name: body.Name, Email: body.Email}, nil
 }
