@@ -5,193 +5,97 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/josephburgess/breeze/internal/api/middleware"
 	"github.com/josephburgess/breeze/internal/models"
+	"github.com/josephburgess/breeze/internal/services/store"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
-	"github.com/stretchr/testify/require"
 )
 
-type UserValidator interface {
-	ValidateAPIKey(apiKey string) (*models.User, error)
-}
-
-type MockUserStore struct {
+type MockKeys struct {
 	mock.Mock
 }
 
-func (m *MockUserStore) ValidateAPIKey(apiKey string) (*models.User, error) {
+func (m *MockKeys) Spend(ctx context.Context, apiKey string) (store.Usage, error) {
 	args := m.Called(apiKey)
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
-	}
-	return args.Get(0).(*models.User), args.Error(1)
+	return args.Get(0).(store.Usage), args.Error(1)
 }
 
-func TestApiKeyAuth_ValidKey(t *testing.T) {
-	mockStore := new(MockUserStore)
+var reached = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	user := r.Context().Value(middleware.UserContextKey).(*models.User)
+	custom, _ := r.Context().Value(middleware.CustomApiContextKey).(string)
+	w.Write([]byte(user.Login + "|" + custom))
+})
 
-	// Test data
-	testUser := &models.User{
-		ID:       1,
-		GithubID: 12345,
-		Login:    "testuser",
-	}
-	testAPIKey := "gust_valid_api_key"
-
-	// Set expectations
-	mockStore.On("ValidateAPIKey", testAPIKey).Return(testUser, nil)
-
-	// Create a custom middleware function that uses our mock
-	apiKeyAuthMiddleware := func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			apiKey := r.URL.Query().Get("api_key")
-
-			if apiKey == "" {
-				http.Error(w, "API key is required", http.StatusUnauthorized)
-				return
-			}
-
-			user, err := mockStore.ValidateAPIKey(apiKey)
-			if err != nil {
-				http.Error(w, "Invalid API key", http.StatusUnauthorized)
-				return
-			}
-
-			ctx := context.WithValue(r.Context(), middleware.UserContextKey, user)
-			next.ServeHTTP(w, r.WithContext(ctx))
-		})
-	}
-
-	// Create a test handler that checks if user is in context
-	nextHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Check if user is in context
-		user, ok := r.Context().Value(middleware.UserContextKey).(*models.User)
-		assert.True(t, ok, "User should be in context")
-		assert.Equal(t, testUser, user)
-
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("success"))
-	})
-
-	// Create request with API key
-	req, err := http.NewRequest("GET", "/api/test?api_key="+testAPIKey, nil)
-	require.NoError(t, err)
-
-	// Create response recorder
+func TestApiKeyAuth_ValidKeyReachesHandlerWithRateLimitHeaders(t *testing.T) {
+	keys := new(MockKeys)
+	reset := time.Date(2026, 11, 5, 0, 0, 0, 0, time.UTC)
+	keys.On("Spend", "gust_ok").Return(store.Usage{User: &models.User{Login: "joe"}, Limit: 50, Remaining: 49, Reset: reset}, nil)
 	rr := httptest.NewRecorder()
 
-	// Execute middleware with next handler
-	handlerToTest := apiKeyAuthMiddleware(nextHandler)
-	handlerToTest.ServeHTTP(rr, req)
+	middleware.ApiKeyAuth(keys)(reached).ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/?api_key=gust_ok", nil))
 
-	// Assertions
 	assert.Equal(t, http.StatusOK, rr.Code)
-	assert.Equal(t, "success", rr.Body.String())
-
-	// Verify expectations
-	mockStore.AssertExpectations(t)
+	assert.Equal(t, "joe|", rr.Body.String())
+	assert.Equal(t, "50", rr.Header().Get("X-RateLimit-Limit"))
+	assert.Equal(t, "49", rr.Header().Get("X-RateLimit-Remaining"))
+	assert.Equal(t, "2026-11-05T00:00:00Z", rr.Header().Get("X-RateLimit-Reset"))
 }
 
-func TestApiKeyAuth_MissingKey(t *testing.T) {
-	// Setup
-	mockStore := new(MockUserStore)
-
-	// Create a custom middleware function that uses our mock
-	apiKeyAuthMiddleware := func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			apiKey := r.URL.Query().Get("api_key")
-
-			if apiKey == "" {
-				http.Error(w, "API key is required", http.StatusUnauthorized)
-				return
-			}
-
-			user, err := mockStore.ValidateAPIKey(apiKey)
-			if err != nil {
-				http.Error(w, "Invalid API key", http.StatusUnauthorized)
-				return
-			}
-
-			ctx := context.WithValue(r.Context(), middleware.UserContextKey, user)
-			next.ServeHTTP(w, r.WithContext(ctx))
-		})
-	}
-
-	// Create a test handler that should not be called
-	nextHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		t.Fatal("Next handler should not be called")
-	})
-
-	// Create request without API key
-	req, err := http.NewRequest("GET", "/api/test", nil)
-	require.NoError(t, err)
-
-	// Create response recorder
+func TestApiKeyAuth_MissingKeyIsUnauthorized(t *testing.T) {
 	rr := httptest.NewRecorder()
 
-	// Execute middleware with next handler
-	handlerToTest := apiKeyAuthMiddleware(nextHandler)
-	handlerToTest.ServeHTTP(rr, req)
+	middleware.ApiKeyAuth(new(MockKeys))(reached).ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/", nil))
 
-	// Assertions
 	assert.Equal(t, http.StatusUnauthorized, rr.Code)
-	assert.Contains(t, rr.Body.String(), "API key is required")
+	assert.JSONEq(t, `{"code":"missing_key","message":"an API key is required"}`, rr.Body.String())
 }
 
-func TestApiKeyAuth_InvalidKey(t *testing.T) {
-	// Setup
-	mockStore := new(MockUserStore)
-
-	// Test data
-	testAPIKey := "gust_invalid_api_key"
-	testError := assert.AnError // Use testify's built-in error
-
-	// Set expectations
-	mockStore.On("ValidateAPIKey", testAPIKey).Return(nil, testError)
-
-	// Create a custom middleware function that uses our mock
-	apiKeyAuthMiddleware := func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			apiKey := r.URL.Query().Get("api_key")
-
-			if apiKey == "" {
-				http.Error(w, "API key is required", http.StatusUnauthorized)
-				return
-			}
-
-			user, err := mockStore.ValidateAPIKey(apiKey)
-			if err != nil {
-				http.Error(w, "Invalid API key", http.StatusUnauthorized)
-				return
-			}
-
-			ctx := context.WithValue(r.Context(), middleware.UserContextKey, user)
-			next.ServeHTTP(w, r.WithContext(ctx))
-		})
-	}
-
-	// Create a test handler that should not be called
-	nextHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		t.Fatal("Next handler should not be called")
-	})
-
-	// Create request with invalid API key
-	req, err := http.NewRequest("GET", "/api/test?api_key="+testAPIKey, nil)
-	require.NoError(t, err)
-
-	// Create response recorder
+func TestApiKeyAuth_UnknownKeyIsUnauthorized(t *testing.T) {
+	keys := new(MockKeys)
+	keys.On("Spend", "gust_bad").Return(store.Usage{}, store.ErrInvalidKey)
 	rr := httptest.NewRecorder()
 
-	// Execute middleware with next handler
-	handlerToTest := apiKeyAuthMiddleware(nextHandler)
-	handlerToTest.ServeHTTP(rr, req)
+	middleware.ApiKeyAuth(keys)(reached).ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/?api_key=gust_bad", nil))
 
-	// Assertions
 	assert.Equal(t, http.StatusUnauthorized, rr.Code)
-	assert.Contains(t, rr.Body.String(), "Invalid API key")
+	assert.Contains(t, rr.Body.String(), `"invalid_key"`)
+}
 
-	// Verify expectations
-	mockStore.AssertExpectations(t)
+func TestApiKeyAuth_SpentKeyIsRateLimited(t *testing.T) {
+	keys := new(MockKeys)
+	keys.On("Spend", "gust_spent").Return(store.Usage{Limit: 50, Remaining: 0}, store.ErrRateLimited)
+	rr := httptest.NewRecorder()
+
+	middleware.ApiKeyAuth(keys)(reached).ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/?api_key=gust_spent", nil))
+
+	assert.Equal(t, http.StatusTooManyRequests, rr.Code)
+	assert.Equal(t, "0", rr.Header().Get("X-RateLimit-Remaining"))
+	assert.Contains(t, rr.Body.String(), `"rate_limited"`)
+}
+
+func TestApiKeyAuth_CustomKeySkipsStore(t *testing.T) {
+	keys := new(MockKeys)
+	rr := httptest.NewRecorder()
+
+	middleware.ApiKeyAuth(keys)(reached).ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/?api_key=owm123", nil))
+
+	assert.Equal(t, http.StatusOK, rr.Code)
+	assert.Equal(t, "custom-api-user|owm123", rr.Body.String())
+	keys.AssertNotCalled(t, "Spend", mock.Anything)
+}
+
+func TestApiKeyAuth_ReadsBearerHeader(t *testing.T) {
+	keys := new(MockKeys)
+	keys.On("Spend", "gust_header").Return(store.Usage{User: &models.User{Login: "joe"}, Limit: 50}, nil)
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.Header.Set("Authorization", "Bearer gust_header")
+	rr := httptest.NewRecorder()
+
+	middleware.ApiKeyAuth(keys)(reached).ServeHTTP(rr, req)
+
+	assert.Equal(t, http.StatusOK, rr.Code)
+	assert.Equal(t, "joe|", rr.Body.String())
 }

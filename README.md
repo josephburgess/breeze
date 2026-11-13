@@ -23,7 +23,6 @@ If you need a weather API you're probably better off going straight to the sourc
 
 API key required for these:
 
-- `GET /api/user` - Get current user information
 - `GET /api/weather/{city}` - Get weather data for a specific city (can also specify `units` - metric/imperial)
 
 ## Getting Started
@@ -46,8 +45,6 @@ OPENWEATHER_API_KEY=your_openweather_api_key
 // GH variables - requires setting up a Github application on your account - https://github.com/settings/apps
 GITHUB_CLIENT_ID=your_github_client_id
 GITHUB_CLIENT_SECRET=your_github_client_secret
-GITHUB_REDIRECT_URI=http://localhost:8080/api/auth/callback
-JWT_SECRET=secret_string_for_jwts
 ```
 
 ### Running Locally
